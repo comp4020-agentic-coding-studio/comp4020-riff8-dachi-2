@@ -9,7 +9,6 @@ Do not write a design proposal. Do not stop to ask questions: nobody is there
 to answer. Where this prompt leaves a choice open, make the choice yourself and
 explain what you chose and why in the commit message that introduces it.
 
-Never touch `comp4020-final-dachi`.
 
 The next brief is real-time: several hands on the scroll at once. Long Scroll
 already persists and is already multi-user; this run makes it live, and gives
@@ -31,7 +30,6 @@ Before changing anything:
 If this is `comp4020-final-dachi`, or the repository identity does not match,
 stop immediately without modifying any file.
 
-Do not copy changes back into `comp4020-final-dachi`.
 
 ---
 
