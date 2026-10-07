@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { addMark, listMarks, type Mark } from "./db.ts";
+import { addMark, listMarks } from "./db.ts";
+import { attach, broadcastMark, toPublic } from "./live.ts";
 import { validateMark } from "./marks.ts";
 import { renderReadme } from "./readme.ts";
 
@@ -91,26 +92,21 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-// A hand is a bearer token: anyone who learns another browser's hand can
-// copy it into their own cookie and pass as that browser. So it never
-// leaves the server — every stroke a client sees says only whether it
-// belongs to the reader asking.
-export interface PublicMark {
-  id: number;
-  note: string;
-  color: string;
-  createdAt: string;
-  yours: boolean;
-}
-
-function toPublic(mark: Mark, reader: string | null): PublicMark {
-  return {
-    id: mark.id,
-    note: mark.note,
-    color: mark.color,
-    createdAt: mark.createdAt,
-    yours: reader !== null && mark.hand === reader,
-  };
+// Reads the request's hand, or mints a fresh one and adds the set-cookie
+// that carries it. Minted on the first read, not just the first write, so a
+// visitor who has only looked can still be counted as one hand on the stream.
+function handFor(req: IncomingMessage, headers: Record<string, string>): string {
+  const cookies = parseCookies(req.headers.cookie);
+  if (isValidHand(cookies.hand)) return cookies.hand;
+  const hand = randomUUID();
+  const fiveYears = 60 * 60 * 24 * 365 * 5;
+  // HttpOnly: no script on this page ever reads document.cookie, so
+  // there's no reason a hand — a five-year bearer token for a store
+  // with no delete path — should be exposed to one. Secure: fly.toml
+  // forces https, so the browser never has an http origin to send it
+  // from anyway.
+  headers["set-cookie"] = `hand=${hand}; Path=/; Max-Age=${fiveYears}; SameSite=Lax; HttpOnly; Secure`;
+  return hand;
 }
 
 async function serveStatic(res: ServerResponse, filename: string, contentType: string) {
@@ -163,10 +159,26 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/marks") {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      const reader = handFor(req, headers);
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ marks: listMarks().map((m) => toPublic(m, reader)) }));
+      return;
+    }
+    // Read-only: it pushes each newly stored stroke and the presence count,
+    // and no method on it writes anything. Writes stay on the same-origin
+    // POST below.
+    if (req.method === "GET" && url.pathname === "/api/stream") {
       const cookies = parseCookies(req.headers.cookie);
       const reader = isValidHand(cookies.hand) ? cookies.hand : null;
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ marks: listMarks().map((m) => toPublic(m, reader)) }));
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+      });
+      const detach = attach(res, reader);
+      req.on("close", detach);
+      res.on("close", detach);
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/marks") {
@@ -176,20 +188,8 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const cookies = parseCookies(req.headers.cookie);
-      let hand = isValidHand(cookies.hand) ? cookies.hand : undefined;
       const headers: Record<string, string> = {};
-      if (!hand) {
-        hand = randomUUID();
-        const fiveYears = 60 * 60 * 24 * 365 * 5;
-        // HttpOnly: no script on this page ever reads document.cookie, so
-        // there's no reason a hand — a five-year bearer token for a store
-        // with no delete path — should be exposed to one. Secure: fly.toml
-        // forces https, so the browser never has an http origin to send it
-        // from anyway.
-        headers["set-cookie"] =
-          `hand=${hand}; Path=/; Max-Age=${fiveYears}; SameSite=Lax; HttpOnly; Secure`;
-      }
+      const hand = handFor(req, headers);
 
       let body: string;
       try {
@@ -225,6 +225,7 @@ const server = createServer(async (req, res) => {
       const mark = addMark(hand, validated.note, validated.color);
       res.writeHead(201, { ...headers, "content-type": "application/json" });
       res.end(JSON.stringify({ mark: toPublic(mark, hand) }));
+      broadcastMark(mark);
       return;
     }
 
