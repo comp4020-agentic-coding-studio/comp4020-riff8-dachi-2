@@ -83,3 +83,34 @@ it("offers only native, labelled, keyboard-reachable controls", async () => {
   }
   expect(form.querySelectorAll("[tabindex], [onclick], [role='button']")).toHaveLength(0);
 });
+
+// A stroke's brush shape is generated from its id alone, so every load (and
+// every browser) draws the same stored stroke identically, and no two differ.
+it("draws the same stroke identically on every load, and different strokes differently", async () => {
+  const note = `page test, shape ${randomUUID()}`;
+  const cookie = await addStroke(note);
+  const shapes = async () => {
+    const doc = await openPage(cookie);
+    await itemFor(doc, note);
+    return [...doc.querySelectorAll("#scroll .mark")].map((li) => [
+      li.id,
+      li.querySelector("svg")!.innerHTML,
+    ]);
+  };
+  const first = await shapes();
+  const second = await shapes();
+  expect(second).toEqual(first);
+  expect(new Set(first.map(([, svg]) => svg)).size).toBe(first.length);
+});
+
+it("links a returning browser straight to its latest stroke", async () => {
+  const cookie = await addStroke(`page test, older ${randomUUID()}`);
+  const latest = `page test, latest ${randomUUID()}`;
+  await addStroke(latest, cookie);
+
+  const doc = await openPage(cookie);
+  const li = await itemFor(doc, latest);
+  const link = doc.querySelector<HTMLAnchorElement>("#welcome-back a")!;
+  expect(link.getAttribute("href")).toBe(`#${li.id}`);
+  expect(link.textContent).toMatch(/latest stroke/);
+});

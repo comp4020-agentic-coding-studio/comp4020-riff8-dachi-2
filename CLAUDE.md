@@ -49,6 +49,12 @@ these, the README's argument has to change first, not the other way round.
   `<input>`'s own `maxlength` or the radio group's own values.
 - Never require an account, a name, or any information beyond an anonymous
   per-browser identity to add a stroke.
+- Never send a stored `hand` to any client, in any response or stream
+  event. A hand is a bearer token; ownership travels only as a per-reader
+  `yours` boolean, and presence only as a count.
+- Never let `/api/stream` write anything. Writes stay on the same-origin
+  POST.
+- Never start sound without a click on "Hear the scroll".
 - Never accept a stroke from a cross-site request. A write with no edit or
   delete path is permanent, so a drive-by page silently posting on a
   visitor's behalf is as serious as a bad value in the fields themselves.
@@ -67,4 +73,7 @@ these, the README's argument has to change first, not the other way round.
 
 - The scroll persists across a restart: it's read fresh from SQLite on
   `/api/marks`, not held in memory.
+- Live arrival and presence are an in-process broadcast, correct only
+  because `fly.toml` runs one machine; scaling out needs shared pub/sub
+  first (README, "Multi-user, for now").
 - `pnpm check` and `pnpm check:evidence` pass before a commit.
