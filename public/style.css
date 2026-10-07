@@ -260,6 +260,7 @@ button {
 
 /* the stroke currently being heard: outlined and labelled, not just tinted */
 .mark--sounding {
+  padding-block-start: 0.9rem;
   background: rgb(43 33 24 / 0.06);
   box-shadow: inset 3px 0 0 var(--ink);
 }
@@ -267,7 +268,7 @@ button {
 .sounding-label {
   position: absolute;
   left: 0.5rem;
-  top: -0.35rem;
+  top: 0.1rem;
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;

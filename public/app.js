@@ -339,6 +339,7 @@ function onLiveMark(mark) {
   const { el, added } = insertMark(mark);
   if (!added) return;
   land(el);
+  soundArrival(mark);
   if (!mark.yours) announce(`A new stroke from another hand: ${noteText(mark)}`);
 }
 
@@ -482,6 +483,184 @@ form.addEventListener("submit", async (event) => {
     }
   }
 });
+
+// ---- hearing the scroll ----
+
+// Six inks, six fixed pitches from a C major pentatonic over more than an
+// octave, darkest ink lowest, in the palette's own order.
+const PITCH = {
+  "#2b2118": 261.63, // walnut, C4
+  "#5b4636": 293.66, // umber, D4
+  "#8a6d3b": 329.63, // ochre, E4
+  "#3f5d40": 392.0, // pine, G4
+  "#3a5a6b": 440.0, // slate, A4
+  "#7a3b3b": 523.25, // madder, C5
+};
+
+// Slow enough to watch the highlight move: a stroke with a note holds a
+// little longer, and rings a little longer, than one without.
+const STEP_MS = { plain: 2400, noted: 3300 };
+const RING_S = { plain: 4.2, noted: 5.6 };
+
+const hearButton = document.getElementById("hear");
+let audio = null;
+let playing = false;
+let pass = [];
+let passIndex = 0;
+let stepTimer = null;
+const voices = new Set();
+
+// Built on the first press, never before: no sound without a click.
+function ensureAudio() {
+  if (!audio) {
+    const ctx = new AudioContext();
+    const master = ctx.createGain();
+    master.gain.value = 0.55;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 2200;
+    // a short, dark echo so each note sits in a room rather than a void
+    const delay = ctx.createDelay(1);
+    delay.delayTime.value = 0.43;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.3;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.22;
+    master.connect(tone);
+    tone.connect(ctx.destination);
+    tone.connect(delay);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(wet);
+    wet.connect(ctx.destination);
+    audio = { ctx, master };
+  }
+  if (audio.ctx.state === "suspended") audio.ctx.resume();
+  return audio;
+}
+
+// A soft attack, a long exponential decay, restrained gain: a sine with a
+// quieter octave above it, so it reads as a struck bowl, not a beep.
+function sound(mark) {
+  const { ctx, master } = ensureAudio();
+  const freq = PITCH[mark.color];
+  if (!freq) return;
+  const ring = mark.note ? RING_S.noted : RING_S.plain;
+  const t = ctx.currentTime + 0.02;
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(0.2, t + 0.12);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + ring);
+  env.connect(master);
+
+  const partials = [
+    [1, 1],
+    [2, 0.18],
+  ].map(([ratio, level]) => {
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = freq * ratio;
+    const g = ctx.createGain();
+    g.gain.value = level;
+    osc.connect(g);
+    g.connect(env);
+    osc.start(t);
+    osc.stop(t + ring + 0.1);
+    return osc;
+  });
+
+  const voice = { env, partials };
+  voices.add(voice);
+  partials[0].addEventListener("ended", () => voices.delete(voice));
+}
+
+function hushAll() {
+  if (!audio) return;
+  const now = audio.ctx.currentTime;
+  for (const { env, partials } of voices) {
+    env.gain.cancelScheduledValues(now);
+    env.gain.setValueAtTime(env.gain.value, now);
+    env.gain.linearRampToValueAtTime(0.0001, now + 0.25);
+    for (const osc of partials) osc.stop(now + 0.3);
+  }
+  voices.clear();
+}
+
+function clearSounding() {
+  for (const el of scrollList.querySelectorAll(".mark--sounding")) {
+    el.classList.remove("mark--sounding");
+    el.removeAttribute("aria-current");
+    el.querySelector(".sounding-label")?.remove();
+  }
+}
+
+function markSounding(mark) {
+  clearSounding();
+  const el = document.getElementById(`mark-${mark.id}`);
+  if (!el) return;
+  el.classList.add("mark--sounding");
+  el.setAttribute("aria-current", "true");
+  const label = document.createElement("span");
+  label.className = "sounding-label";
+  label.setAttribute("aria-hidden", "true");
+  label.textContent = "sounding";
+  el.prepend(label);
+  // Under reduced motion the highlight still moves, the page doesn't.
+  if (!reducedMotion()) el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+}
+
+function step() {
+  if (!playing) return;
+  if (passIndex >= pass.length) {
+    stopListening("The scroll has finished playing.");
+    return;
+  }
+  const mark = pass[passIndex++];
+  markSounding(mark);
+  sound(mark);
+  // just the note and its time: the button already says what's happening
+  announce(`${noteText(mark)}, ${timeLabel(mark.createdAt)}`);
+  stepTimer = setTimeout(step, mark.note ? STEP_MS.noted : STEP_MS.plain);
+}
+
+function startListening() {
+  // The pass is fixed when it starts: a stroke that lands mid-pass sounds
+  // once as it arrives and waits for the next time you press play.
+  pass = sortedMarks();
+  if (pass.length === 0) {
+    announce("The scroll is empty — there's nothing to hear yet.");
+    return;
+  }
+  ensureAudio();
+  playing = true;
+  passIndex = 0;
+  hearButton.setAttribute("aria-pressed", "true");
+  hearButton.textContent = "Stop";
+  announce(`Playing ${pass.length} strokes, oldest first.`);
+  stepTimer = setTimeout(step, 600);
+}
+
+function stopListening(message = "Stopped.") {
+  playing = false;
+  clearTimeout(stepTimer);
+  hushAll();
+  clearSounding();
+  hearButton.setAttribute("aria-pressed", "false");
+  hearButton.textContent = "Hear the scroll";
+  announce(message);
+}
+
+hearButton.addEventListener("click", () => {
+  if (playing) stopListening();
+  else startListening();
+});
+
+// Another hand's stroke landing while you listen sounds once, straight
+// away. Your own browser's strokes don't count as another hand arriving.
+function soundArrival(mark) {
+  if (playing && !mark.yours) sound(mark);
+}
 
 buildPalette();
 updateCount();
