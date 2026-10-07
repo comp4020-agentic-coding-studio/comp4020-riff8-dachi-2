@@ -1,317 +1,132 @@
-# Long Scroll redesign prompt
-
-You are Claude Design.
-
-Please redesign my COMP4020 final project website **Long Scroll**.  
-The project already exists as a deployed web app and GitHub repository:
-
-- Live site: https://comp4020-final-dachi.fly.dev/
-- Repo: https://github.com/comp4020-agentic-coding-studio/comp4020-final-dachi
-
-Your task is to design an improved version of this project based on the concept and requirements below.
-
----
-
-## 1. Project essence
-
-**Long Scroll** is a shared digital handscroll.
-
-Anyone who visits can leave one small coloured mark on the same shared scroll, with an optional short note.  
-Nothing is edited or removed.  
-When a visitor comes back later in the same browser, the app can still recognise which marks are theirs.
-
-This should **not** become a social feed, chat app, or comment wall.
-
-The design should strengthen the feeling that this is:
-
-- a **shared artwork**
-- a **growing handscroll**
-- a **persistent object that accumulates traces over time**
-- a place where a returning visitor can feel: **“my trace is still here”**
-
----
-
-## 2. New core concept to introduce
-
-I want to extend the project so that everyone’s coloured traces are transformed into a second collective artwork:
-
-**visual scroll + generated music**
-
-The colour sequence on the scroll should influence a musical experience.
-
-This does **not** need to become a full DAW or music tool.  
-It should remain simple, poetic, and conceptually tied to the scroll.
-
-Think in terms of:
-
-- each colour contributing a tone / timbre / motif
-- the sequence of strokes shaping a melody or ambient composition
-- the scroll being something you can both **see** and **hear**
-
-Please incorporate this concept into the design in a tasteful way.
-
----
-
-## 3. Main design goals
-
-### Goal A — Strengthen the handscroll identity
-The current app concept is strong, but the interface should feel much more like a real scroll and much less like a list of comments.
-
-### Goal B — Strengthen “this is my trace”
-Returning visitors should feel a stronger emotional connection to their own marks.
-
-### Goal C — Add a stronger sense of time
-The interface should make it clear that the scroll is growing over days and accumulating many marks.
-
-### Goal D — Make the “add a mark” interaction feel ceremonial
-Adding a stroke should feel like continuing a collective artwork, not submitting an ordinary form.
-
-### Goal E — Maintain accessibility and native usability
-The redesign must still respect accessibility, keyboard use, and native HTML form behaviour.
-
----
-
-## 4. Required content and behaviours
-
-Please design around the following specific ideas.
-
-### 4.1 Shared artwork + generated music
-The project should visually remain a scroll, but the scroll should also have a music-related layer.
-
-Please design a lightweight interaction such as:
-
-- a “Play the scroll” or “Hear the scroll” control
-- music generated from the sequence of colours already on the scroll
-- playback that visually corresponds to marks on the scroll
-
-The design should show how this works conceptually, even if the final implementation is modest.
-
-Important:
-- keep it elegant and simple
-- do not turn this into a complex music production UI
-- the music is a second reading of the same shared data
-
----
-
-### 4.2 Stronger “this is my trace”
-The README already emphasises that returning visitors can still find their own strokes.
-
-Please make this much stronger in the design.
-
-Required ideas:
-- the visitor’s own mark should be recognisable in a way that is **not only colour-based**
-- there should be a clear “welcome back” feeling
-- there should be a quick way to jump to the visitor’s most recent mark
-
-Use this specific visual idea:
-
-- marks belonging to the current visitor should carry a **small vermilion seal** inspired by traditional Chinese handscroll collector seals
-- the seal should read **“yours”**
-- textual labelling should still exist, for example ending with **“— yours”**, so accessibility/testing does not depend only on colour or the seal
-
-Also include:
-- a “Welcome back” line with a link that jumps directly to the visitor’s most recent mark
-
----
-
-### 4.3 Stronger sense of time
-At the top of the page, include a line similar to:
-
-`This scroll has been growing for 12 days · 86 marks`
-
-This should create a sense that the scroll is a living object accumulating over time.
-
-Please design this so it feels atmospheric and meaningful, not like a dashboard.
-
----
-
-### 4.4 Scroll body and visual language
-I want the whole page to feel like a real mounted handscroll.
-
-Required visual direction:
-
-- the page background should become a **dark mounting silk / brocade-like surface**
-- only the scroll itself should be paper
-- the scroll should have a **wooden roller at the top and bottom**
-- the scroll should visually feel like an artwork placed against a darker surrounding field
-
-Please interpret this elegantly rather than literally copying museum UI.
-
----
-
-### 4.5 Brush strokes
-Each user contribution should look like a real brush stroke rather than a flat UI blob.
-
-Required behaviour:
-
-- each stroke should have a **brush quality**:
-  - heavier at the start
-  - thinner at the end
-- the shape of the stroke should be **determined by its id**
-- this means:
-  - each stroke can have a different shape
-  - but it must remain **stable across refreshes**
-  - the same stored stroke should always render the same visual form
-
-The design should show how this system could feel visually.
-
----
-
-### 4.6 “Add the next stroke” form
-The form should feel like continuing the scroll, not filling a generic form.
-
-Required ideas:
-- rename the action conceptually to **“Add the next stroke”**
-- the palette should not visually repeat standard radio circles unnecessarily
-- however, the underlying form must still use **native radio inputs**
-- keyboard interaction must still work
-- focus must still be clearly visible
-
-Also include:
-- a **140-character counter**
-- the submit button should be disabled while submitting
-- the design should make the act of submission feel deliberate and calm
-
----
-
-### 4.7 Feedback after adding a new stroke
-After a new stroke is added:
-
-- it should receive a one-time **ink landing / brush-on-paper** animation
-- the page should automatically scroll so that the new stroke is visible
-- if the user has **prefers-reduced-motion** enabled, the animation must be removed
-
-Please reflect this in the interaction design.
-
----
-
-## 5. Tone and aesthetic
-
-The tone should be:
-
-- calm
-- poetic
-- tactile
-- slightly contemplative
-- intimate rather than commercial
-- artful, but still usable
-
-Avoid:
-- loud social-media energy
-- bright gamified dashboards
-- overly dense productivity-app UI
-- fake “ancient China” cliches
-- excessive ornament that hurts readability
-
-This is a contemporary digital artwork interface inspired by the handscroll tradition, not a historical simulation.
-
----
-
-## 6. Accessibility and implementation constraints
-
-These constraints matter.
-
-Please keep the design realistic for a student web project.
-
-Must preserve:
-- semantic HTML where appropriate
-- native form behaviour
-- keyboard accessibility
-- visible focus states
-- labels that do not rely only on colour
-- graceful behaviour for reduced-motion users
-
-Please do **not** propose a design that depends on:
-- accounts or login
-- editing or deleting strokes
-- chat
-- likes or ranking
-- highly complex audio tooling
-- highly complex canvas-only UI that would be difficult to make accessible
-
----
-
-## 7. What I want from you
-
-Please produce a **design proposal** for this redesigned Long Scroll.
-
-Include:
-
-1. **A clear design concept**
-   - 1–2 paragraph overall direction
-
-2. **A page structure / layout description**
-   - top section
-   - scroll section
-   - music interaction section
-   - form section
-   - returning-visitor affordances
-
-3. **Component-level design details**
-   - header / intro
-   - time summary line
-   - scroll paper + wooden rollers
-   - individual stroke appearance
-   - “yours” seal treatment
-   - note presentation
-   - “welcome back” jump link
-   - colour palette control
-   - character counter
-   - submit button states
-   - playback / hear-the-scroll control
-
-4. **Interaction behaviour**
-   - adding a stroke
-   - seeing your own old strokes
-   - jumping to your latest stroke
-   - hearing the scroll
-   - playback highlighting
-   - reduced-motion behaviour
-
-5. **Visual design system suggestions**
-   - colour mood
-   - typography direction
-   - texture/material hints
-   - spacing and hierarchy
-   - how to balance atmosphere with readability
-
-6. **Accessibility notes**
-   - especially around radio inputs, focus, text labels, and motion
-
-7. **Implementation guidance**
-   - practical notes for a front-end student project
-   - how to keep stroke shapes deterministic from ids
-   - how generated music could be scoped modestly
-
----
-
-## 8. Preferred output style
-
-Please present the answer in a structured, practical format.
-
-Use sections and bullets.
-
-Where useful, include:
-- example UI copy
-- microcopy suggestions
-- specific interaction wording
-- specific component naming
-
-If possible, finish with:
-- a **recommended MVP version**
-- a **stretch version**
-so I can decide what to implement first.
-
----
-
-## 9. Important reminder
-
-The redesign should make the project feel more conceptually complete, not just more decorative.
-
-The best outcome is a design where the visitor feels:
-
-- this is one shared object
-- it has been growing over time
-- my mark matters
-- I can return to it
-- I can now also hear the scroll as a collective composition
+# Riff: a scroll you can hear, with other hands on it
+
+This is your brief for one unattended run in **this repo**
+(`comp4020-riff8-dachi-2`). Build it, test it, commit it. Don't write a design
+proposal, don't stop to ask: nobody is there to answer. Where this prompt
+leaves a choice open, make it and say what you chose, and why, in the commit
+message that makes it. Never touch `comp4020-final-dachi`.
+
+The next brief is real-time: several hands on the scroll at once. Long Scroll
+already persists and is already multi-user; this run makes it live, and gives
+the shared scroll a second reading, as sound.
+
+## The idea
+
+Long Scroll is a shared handscroll: anyone can add a stroke of ink (one of six
+colours, an optional note), nothing is ever removed, and a returning browser
+finds its own strokes still there. It must never turn into a feed, a chat or a
+comment wall.
+
+Three things should be true when this run is done:
+
+1. **It looks and feels like one mounted scroll**, not a list of comments.
+2. **Other people are present.** A stroke someone adds appears on everyone's
+   open page without a reload, and you can tell how many hands are here now.
+3. **The scroll can be heard.** The sequence of colours plays as a quiet piece
+   of music, and while you listen, other people's new strokes arrive as notes.
+
+## Build, in this order
+
+If time runs short, finish an earlier item properly rather than half-doing a
+later one.
+
+### 1. Live updates and presence
+
+- A server-sent events endpoint (e.g. `GET /api/stream`) that pushes each new
+  stroke to every open page the moment it is stored. Keep `GET /api/marks`
+  for the first load. No new dependencies: `node:http` can do this. One Fly
+  machine means an in-process broadcast is enough; say so in the README.
+- The page inserts arriving strokes in place, marks them "— yours" only if
+  they are, and reconnects on its own after a dropped connection or a cold
+  start (the machine stops when idle).
+- A presence line, e.g. "3 hands here now", counted from open streams. It is
+  anonymous: a count, never a list of who.
+
+### 2. The mounted scroll
+
+- The page background is a dark mounting silk; only the scroll is paper, with
+  a wooden roller at its top and bottom. Calm and contemporary, not a museum
+  replica or "ancient China" pastiche.
+- Each stroke is drawn as a brush mark (SVG is fine): heavy where the brush
+  lands, thinning as it lifts. Its shape is derived from the stroke's `id`
+  with a seeded generator, so every stroke differs but the same stroke looks
+  identical on every load, for everyone.
+- Your own strokes carry a small vermilion seal reading "yours", like a
+  collector's seal. The text " — yours" must still end the item's text, so
+  the seal is never the only signal.
+- A welcome-back line for a returning browser, with a link that jumps to its
+  most recent stroke.
+- A line under the title that makes time visible, computed from real data:
+  "This scroll has been growing for 12 days · 86 marks". It updates when a
+  stroke arrives live.
+- Times are formatted in the page's own language (`en-AU`), not the
+  visitor's browser locale.
+
+### 3. Adding a stroke
+
+- The form is headed "Add the next stroke". The six colours show as ink
+  swatches, but they are still native radio inputs: keyboard works, focus is
+  clearly visible, each has its name as a label.
+- A live "N characters left" counter for the 140-character note.
+- The button is disabled while the stroke is being added. Errors say what the
+  server actually answered (note too long, unknown colour, cross-site,
+  anything else) and what to do next.
+- The new stroke "inks on" once (a short draw-down animation) and is scrolled
+  into view. With `prefers-reduced-motion: reduce`, no animation and no smooth
+  scrolling.
+
+### 4. Hear the scroll
+
+- A "Hear the scroll" button (a native `<button>` with `aria-pressed`, label
+  changes to "Stop") plays the strokes in the order they were added, using
+  the Web Audio API only: no audio libraries, no sample files.
+- Each of the six colours is one fixed note from a pentatonic scale, with a
+  soft attack and a long decay, so any sequence sounds consonant. A stroke
+  with a note can sound slightly longer than one without. Keep it quiet and
+  slow: this is ambience, not a game.
+- While playing, the stroke being heard is visibly highlighted (not by colour
+  alone) and announced politely to screen readers by its note text and time.
+  With reduced motion, highlight without auto-scrolling.
+- While it is on, a stroke arriving live from someone else sounds its note
+  as it lands. That is the point of the riff: you hear other hands arrive.
+- Sound never starts on its own; only the button starts it.
+
+## Keep
+
+Everything in the "Your harness" section of `CLAUDE.md` still holds:
+append-only, six colours and 140 characters validated server-side, no
+accounts, same-origin writes only, nothing signalled by colour alone, native
+labelled controls. The stream must not become a write path or leak any
+browser's `hand` value to other browsers: send each page only whether a
+stroke is its own.
+
+Fix the same leak where it already exists: `GET /api/marks` currently returns
+every stroke's `hand`, so anyone can read another browser's identity and
+copy it into their own cookie. Return a per-request `yours: true/false`
+instead, and never send `hand` values out at all.
+
+`README.md` is the app's argument and `CLAUDE.md` says the argument changes
+first. Update its "What I chose not to build" and "Multi-user, for now"
+sections to describe what live updates, presence and sound now mean here,
+and why. Keep its headings and its cited sources.
+
+## Leave alone
+
+Accounts or names, editing or deleting strokes, chat or replies, likes or
+ranking, rate limiting, a canvas-only scroll, audio tooling beyond one
+button, any new runtime dependency, a framework or a stack change.
+
+## Done means
+
+- Two browsers open on the page: a stroke added in one appears in the other
+  within two seconds, without a reload, with the presence count showing 2.
+- A new spec test opens the stream, posts a stroke, and receives it; another
+  checks that neither the stream nor `GET /api/marks` ever carries a `hand`
+  value. The existing spec files
+  stay green (update `page.test.ts` only where the markup genuinely changed).
+  `spec/invariants.test.ts` stays green untouched. `pnpm check` passes.
+- In a real browser, at desktop and phone width: every control is reachable
+  by keyboard with visible focus, "Hear the scroll" plays and stops, the
+  highlight follows the sound, the console is clean.
+- `README.md` reads as the updated argument, and `/readme/` renders it.
+- `main` is deployable, and your last commit deletes this file.
