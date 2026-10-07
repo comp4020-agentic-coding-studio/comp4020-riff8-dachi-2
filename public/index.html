@@ -7,42 +7,69 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header class="site-header">
-      <h1>Long Scroll</h1>
-      <p class="tagline">
-        A shared scroll. Everyone who visits can add one stroke to it; nothing on it is ever
-        removed.
-      </p>
-      <p><a href="/readme/">what &ldquo;good&rdquo; means for this</a></p>
-    </header>
+    <div class="mounted">
+      <div class="roller roller--top" aria-hidden="true"></div>
 
-    <main>
-      <p id="welcome-back" class="welcome-back" hidden></p>
-
-      <section aria-label="the scroll">
-        <ol id="scroll" class="scroll">
-          <li class="scroll__empty" id="scroll-empty">the scroll is empty &mdash; be the first hand</li>
-        </ol>
-      </section>
-
-      <form id="add-mark-form" aria-label="add your mark">
-        <fieldset>
-          <legend>Add your mark</legend>
-
-          <div class="palette" role="radiogroup" aria-label="ink colour">
-            <!-- populated by app.js from the same palette the server validates against -->
-          </div>
-
-          <p>
-            <label for="note">a short note (optional)</label>
-            <input id="note" name="note" type="text" maxlength="140" autocomplete="off" />
+      <div class="paper">
+        <header class="scroll-head">
+          <h1>Long Scroll</h1>
+          <p class="tagline">
+            A shared scroll. Everyone who visits can add one stroke to it; nothing on it is ever
+            removed.
           </p>
+          <p id="growing" class="growing">&nbsp;</p>
+          <p id="presence" class="presence">&nbsp;</p>
+          <p class="about"><a href="/readme/">what &ldquo;good&rdquo; means for this</a></p>
+        </header>
 
-          <button type="submit">Add to the scroll</button>
-        </fieldset>
-        <p id="form-status" role="status" aria-live="polite"></p>
-      </form>
-    </main>
+        <main>
+          <p id="welcome-back" class="welcome-back" hidden></p>
+
+          <div class="listen">
+            <button type="button" id="hear" class="hear" aria-pressed="false">
+              Hear the scroll
+            </button>
+          </div>
+          <p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>
+
+          <section aria-label="the scroll">
+            <ol id="scroll" class="scroll">
+              <li class="scroll__empty" id="scroll-empty">
+                the scroll is empty &mdash; be the first hand
+              </li>
+            </ol>
+          </section>
+
+          <form id="add-mark-form" class="next-stroke" aria-label="add the next stroke">
+            <fieldset>
+              <legend>Add the next stroke</legend>
+
+              <div class="palette" role="radiogroup" aria-label="ink colour">
+                <!-- populated by app.js from the same palette the server validates against -->
+              </div>
+
+              <p class="note-field">
+                <label for="note">a short note (optional)</label>
+                <input
+                  id="note"
+                  name="note"
+                  type="text"
+                  maxlength="140"
+                  autocomplete="off"
+                  aria-describedby="note-count"
+                />
+                <span id="note-count" class="note-count">140 characters left</span>
+              </p>
+
+              <button type="submit" class="add">Add to the scroll</button>
+            </fieldset>
+            <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+          </form>
+        </main>
+      </div>
+
+      <div class="roller roller--bottom" aria-hidden="true"></div>
+    </div>
 
     <footer class="site-footer">
       <p>
