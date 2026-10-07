@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { addMark, listMarks } from "./db.ts";
+import { addMark, listMarks, type Mark } from "./db.ts";
 import { validateMark } from "./marks.ts";
 import { renderReadme } from "./readme.ts";
 
@@ -91,6 +91,28 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+// A hand is a bearer token: anyone who learns another browser's hand can
+// copy it into their own cookie and pass as that browser. So it never
+// leaves the server — every stroke a client sees says only whether it
+// belongs to the reader asking.
+export interface PublicMark {
+  id: number;
+  note: string;
+  color: string;
+  createdAt: string;
+  yours: boolean;
+}
+
+function toPublic(mark: Mark, reader: string | null): PublicMark {
+  return {
+    id: mark.id,
+    note: mark.note,
+    color: mark.color,
+    createdAt: mark.createdAt,
+    yours: reader !== null && mark.hand === reader,
+  };
+}
+
 async function serveStatic(res: ServerResponse, filename: string, contentType: string) {
   const data = await readFile(new URL(filename, PUBLIC_DIR));
   res.writeHead(200, { "content-type": `${contentType}; charset=utf-8` });
@@ -142,9 +164,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/marks") {
       const cookies = parseCookies(req.headers.cookie);
-      const you = isValidHand(cookies.hand) ? cookies.hand : null;
+      const reader = isValidHand(cookies.hand) ? cookies.hand : null;
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ marks: listMarks(), you }));
+      res.end(JSON.stringify({ marks: listMarks().map((m) => toPublic(m, reader)) }));
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/marks") {
@@ -202,7 +224,7 @@ const server = createServer(async (req, res) => {
 
       const mark = addMark(hand, validated.note, validated.color);
       res.writeHead(201, { ...headers, "content-type": "application/json" });
-      res.end(JSON.stringify({ mark }));
+      res.end(JSON.stringify({ mark: toPublic(mark, hand) }));
       return;
     }
 

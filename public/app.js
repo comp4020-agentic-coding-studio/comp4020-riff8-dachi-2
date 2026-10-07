@@ -53,9 +53,9 @@ function timeLabel(iso) {
   });
 }
 
-function markToListItem(mark, you) {
+function markToListItem(mark) {
   const li = document.createElement("li");
-  li.className = "mark" + (you && mark.hand === you ? " mark--yours" : "");
+  li.className = "mark" + (mark.yours ? " mark--yours" : "");
 
   const stroke = document.createElement("span");
   stroke.className = "mark__stroke";
@@ -65,24 +65,24 @@ function markToListItem(mark, you) {
   const text = document.createElement("span");
   text.className = "mark__text";
   const noteText = mark.note ? mark.note : "(a stroke, no note)";
-  const yoursSuffix = you && mark.hand === you ? " — yours" : "";
+  const yoursSuffix = mark.yours ? " — yours" : "";
   text.textContent = `${noteText} — ${timeLabel(mark.createdAt)}${yoursSuffix}`;
 
   li.append(stroke, text);
   return li;
 }
 
-function render(marks, you) {
+function render(marks) {
   scrollList.innerHTML = "";
   if (marks.length === 0) {
     scrollList.append(emptyNotice);
     return;
   }
   for (const mark of marks) {
-    scrollList.append(markToListItem(mark, you));
+    scrollList.append(markToListItem(mark));
   }
 
-  const ownCount = you ? marks.filter((m) => m.hand === you).length : 0;
+  const ownCount = marks.filter((m) => m.yours).length;
   if (ownCount > 0) {
     welcomeBack.hidden = false;
     welcomeBack.textContent =
@@ -99,7 +99,7 @@ async function load() {
   try {
     const res = await fetch("/api/marks");
     const data = await res.json();
-    render(data.marks, data.you);
+    render(data.marks);
   } catch {
     scrollList.innerHTML = "";
     const notice = document.createElement("li");
