@@ -65,23 +65,164 @@ function noteText(mark) {
   return mark.note ? mark.note : "(a stroke, no note)";
 }
 
+// ---- brush marks ----
+
+// A stroke's shape comes from its id alone, through a small seeded generator
+// (mulberry32), so the same stored stroke draws identically on every load and
+// in every browser, and no two ids draw alike.
+function seeded(id) {
+  let a = Math.imul(id ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const f1 = (n) => n.toFixed(1);
+
+// The brush lands heavy at the left, swells briefly, then thins along a
+// gently bent line as it lifts, with a little seeded wobble in the width.
+function brushShape(id) {
+  const rand = seeded(id);
+  const length = 165 + rand() * 65;
+  const x0 = 10 + rand() * 8;
+  const y0 = 24 + (rand() - 0.5) * 8;
+  const slope = (rand() - 0.5) * 0.1;
+  const bend = (rand() - 0.5) * 10;
+  const heavy = 8.5 + rand() * 5;
+  const lift = 0.7 + rand() * 0.6;
+  const steps = 28;
+
+  const centre = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = x0 + t * length;
+    const y = y0 + slope * t * length + bend * Math.sin(Math.PI * t);
+    const swell = t < 0.1 ? 0.7 + 3 * t : 1;
+    const width = Math.max(0.35, heavy * swell * Math.pow(1 - t, lift) * (0.9 + rand() * 0.2));
+    centre.push({ x, y, width });
+  }
+
+  const upper = [];
+  const lower = [];
+  centre.forEach((p, i) => {
+    const prev = centre[Math.max(0, i - 1)];
+    const next = centre[Math.min(steps, i + 1)];
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    upper.push([p.x + nx * p.width, p.y + ny * p.width]);
+    lower.push([p.x - nx * p.width, p.y - ny * p.width]);
+  });
+
+  const edge = (points) =>
+    points
+      .slice(1)
+      .map(([x, y], i) => {
+        const [px, py] = points[i];
+        return `Q${f1(px)} ${f1(py)} ${f1((px + x) / 2)} ${f1((py + y) / 2)}`;
+      })
+      .join(" ");
+  const back = [...lower].reverse();
+  const body =
+    `M${f1(upper[0][0])} ${f1(upper[0][1])} ${edge(upper)} ` +
+    `L${f1(back[0][0])} ${f1(back[0][1])} ${edge(back)} Z`;
+
+  // the landing: a slightly rotated blot where the brush first pressed down
+  const landing = {
+    cx: x0 + heavy * 0.3,
+    cy: y0,
+    rx: heavy * (1.05 + rand() * 0.25),
+    ry: heavy * (0.85 + rand() * 0.2),
+    rotate: (rand() - 0.5) * 40,
+  };
+
+  // dry-brush hairs where the ink runs thin towards the lift
+  const hairs = [];
+  const hairCount = Math.floor(rand() * 3);
+  for (let h = 0; h < hairCount; h++) {
+    const from = Math.floor(steps * (0.35 + rand() * 0.2));
+    const to = Math.min(steps, from + Math.floor(steps * (0.15 + rand() * 0.25)));
+    const offset = (rand() - 0.5) * 0.9;
+    const pts = centre
+      .slice(from, to)
+      .map((p) => `${f1(p.x)},${f1(p.y + offset * p.width)}`)
+      .join(" ");
+    hairs.push(pts);
+  }
+
+  return { body, landing, hairs, drift: rand(), tilt: (rand() - 0.5) * 8 };
+}
+
+function brushSvg(mark, shape) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 250 48");
+  svg.setAttribute("class", "mark__stroke");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.style.setProperty("--stroke", mark.color);
+
+  const blot = document.createElementNS(SVG_NS, "ellipse");
+  const { cx, cy, rx, ry, rotate } = shape.landing;
+  blot.setAttribute("cx", f1(cx));
+  blot.setAttribute("cy", f1(cy));
+  blot.setAttribute("rx", f1(rx));
+  blot.setAttribute("ry", f1(ry));
+  blot.setAttribute("transform", `rotate(${f1(rotate)} ${f1(cx)} ${f1(cy)})`);
+
+  const body = document.createElementNS(SVG_NS, "path");
+  body.setAttribute("d", shape.body);
+
+  const ink = document.createElementNS(SVG_NS, "g");
+  ink.setAttribute("class", "mark__ink");
+  ink.append(blot, body);
+  for (const pts of shape.hairs) {
+    const hair = document.createElementNS(SVG_NS, "polyline");
+    hair.setAttribute("points", pts);
+    hair.setAttribute("class", "mark__hair");
+    ink.append(hair);
+  }
+  svg.append(ink);
+  return svg;
+}
+
 function markToListItem(mark) {
+  const shape = brushShape(mark.id);
   const li = document.createElement("li");
   li.className = "mark" + (mark.yours ? " mark--yours" : "");
   li.id = `mark-${mark.id}`;
   li.dataset.id = String(mark.id);
+  // focus target for "find your latest stroke"; not in the tab order
+  li.tabIndex = -1;
+  li.style.setProperty("--drift", shape.drift.toFixed(3));
 
-  const stroke = document.createElement("span");
-  stroke.className = "mark__stroke";
-  stroke.style.setProperty("--stroke", mark.color);
-  stroke.setAttribute("aria-hidden", "true");
+  const brush = document.createElement("span");
+  brush.className = "mark__brush";
+  brush.append(brushSvg(mark, shape));
+
+  // The seal is decoration; the text below says "— yours" for everyone,
+  // including anyone who can't see the seal or its colour.
+  if (mark.yours) {
+    const seal = document.createElement("span");
+    seal.className = "seal";
+    seal.setAttribute("aria-hidden", "true");
+    seal.style.setProperty("--tilt", `${shape.tilt.toFixed(1)}deg`);
+    seal.textContent = "yours";
+    brush.append(seal);
+  }
 
   const text = document.createElement("span");
   text.className = "mark__text";
   const yoursSuffix = mark.yours ? " — yours" : "";
   text.textContent = `${noteText(mark)} — ${timeLabel(mark.createdAt)}${yoursSuffix}`;
 
-  li.append(stroke, text);
+  li.append(brush, text);
   return li;
 }
 
@@ -121,14 +262,40 @@ function updateSummary() {
         : `This scroll has been growing for ${days} ${days === 1 ? "day" : "days"} · ${countText}`;
   }
 
-  const own = all.filter((m) => m.yours).length;
-  if (own > 0) {
-    welcomeBack.hidden = false;
-    welcomeBack.textContent =
-      own === 1
-        ? "You've left a mark on this scroll before — it's still there."
-        : `You've left ${own} marks on this scroll before — they're still there.`;
-  }
+  const own = all.filter((m) => m.yours);
+  if (own.length > 0) showWelcome(own);
+}
+
+// Shown only to a browser that already owns strokes, with a link to the
+// latest of them; kept current as that browser adds more.
+function showWelcome(own) {
+  const latest = own[own.length - 1];
+  welcomeBack.hidden = false;
+  welcomeBack.replaceChildren(
+    own.length === 1
+      ? "Welcome back — your stroke is still there. "
+      : `Welcome back — your ${own.length} strokes are still there. `,
+  );
+  const link = document.createElement("a");
+  link.href = `#mark-${latest.id}`;
+  link.textContent = "Find your latest stroke.";
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    goTo(document.getElementById(`mark-${latest.id}`));
+  });
+  welcomeBack.append(link);
+}
+
+function reducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+// Moves both the view and keyboard focus, so the next Tab continues from
+// the stroke rather than from wherever the link was.
+function goTo(el) {
+  if (!el) return;
+  el.scrollIntoView?.({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+  el.focus({ preventScroll: true });
 }
 
 function announce(text) {
