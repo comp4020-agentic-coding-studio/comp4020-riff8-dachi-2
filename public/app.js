@@ -336,8 +336,9 @@ function onLiveMark(mark) {
   // This page's own POST places and animates its own stroke; the stream's
   // copy of it is the same row and is skipped while that POST is in flight.
   if (mark.yours && submitting) return;
-  const { added } = insertMark(mark);
+  const { el, added } = insertMark(mark);
   if (!added) return;
+  land(el);
   if (!mark.yours) announce(`A new stroke from another hand: ${noteText(mark)}`);
 }
 
@@ -381,41 +382,109 @@ window.addEventListener("online", () => {
 
 // ---- adding a stroke ----
 
+const submitButton = form.querySelector('button[type="submit"]');
+const noteCount = document.getElementById("note-count");
+const NOTE_LIMIT = 140;
+
+// The server's 140-character check is the one that counts; this only says
+// how much room is left before it, counting the way the server does.
+function updateCount() {
+  const left = NOTE_LIMIT - noteInput.value.trim().length;
+  noteCount.textContent =
+    left >= 0
+      ? `${left} ${left === 1 ? "character" : "characters"} left`
+      : `${-left} ${left === -1 ? "character" : "characters"} over`;
+}
+noteInput.addEventListener("input", updateCount);
+
+// What the server actually said, in words, with what to do next.
+function describeRejection(status, error) {
+  switch (error) {
+    case "note-too-long":
+      return "The scroll refused that note: it's over 140 characters. Shorten it and add it again.";
+    case "unknown-color":
+      return "The scroll refused that ink: it isn't one of its six colours. Pick one of the swatches and try again.";
+    case "cross-site-request":
+      return "The scroll refused that write because it didn't come from this page (writes from other sites are blocked). Reload the scroll and add your stroke from here.";
+    case "bad-json":
+      return "The server couldn't read that request (bad-json). Reload the page and try again.";
+  }
+  if (status === 413) {
+    return "The server refused that request as too large (413). Shorten the note and try again.";
+  }
+  const detail = error ? `${status}, ${error}` : String(status);
+  return `The server couldn't store that stroke (${detail}). Nothing was added; try again in a moment.`;
+}
+
+function setStatus(text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle("form-status--error", isError);
+}
+
+function setSubmitting(on) {
+  submitting = on;
+  submitButton.disabled = on;
+  form.setAttribute("aria-busy", String(on));
+}
+
+// A one-time draw-down: the class is only ever added to a stroke that has
+// just arrived, never on a load, so nothing replays after a reload. Under
+// reduced motion the stylesheet drops the animation and the scroll jumps.
+function land(el) {
+  if (reducedMotion()) return;
+  el.classList.add("mark--landing");
+  el.addEventListener("animationend", () => el.classList.remove("mark--landing"), { once: true });
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (submitting) return;
   const color = new FormData(form).get("color");
   const note = noteInput.value;
 
-  submitting = true;
-  statusEl.textContent = "adding your mark…";
-  let res;
+  setSubmitting(true);
+  setStatus("adding your stroke…");
   try {
-    res = await fetch("/api/marks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ color, note }),
-    });
-  } catch {
-    submitting = false;
-    statusEl.textContent = "that mark couldn't be added — check your connection and try again.";
-    return;
-  }
+    let res;
+    try {
+      res = await fetch("/api/marks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ color, note }),
+      });
+    } catch {
+      setStatus(
+        "Your stroke couldn't reach the scroll — the connection dropped. Nothing was added; check your connection and try again.",
+        true,
+      );
+      return;
+    }
 
-  if (!res.ok) {
-    submitting = false;
-    statusEl.textContent = "that mark couldn't be added — try a shorter note.";
-    return;
-  }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      setStatus(describeRejection(res.status, body?.error), true);
+      if (body?.error === "note-too-long") noteInput.focus();
+      return;
+    }
 
-  const { mark } = await res.json();
-  submitting = false;
-  noteInput.value = "";
-  insertMark(mark);
-  statusEl.textContent = "added to the scroll.";
+    const { mark } = await res.json();
+    noteInput.value = "";
+    updateCount();
+    const { el } = insertMark(mark);
+    land(el);
+    el.scrollIntoView?.({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+    setStatus("Your stroke is on the scroll, at the end.");
+  } finally {
+    setSubmitting(false);
+    // a disabled button drops focus; give it back rather than strand it on <body>
+    if (document.activeElement === document.body || document.activeElement === null) {
+      submitButton.focus();
+    }
+  }
 });
 
 buildPalette();
+updateCount();
 // The first read mints this browser's hand cookie if it has none, so the
 // stream opened after it is counted under that hand.
 load().then(connect);
