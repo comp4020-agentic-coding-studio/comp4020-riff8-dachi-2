@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "marked": "18.1.0",
-    "three": "0.170.0",
     "ws": "8.22.0"
   },
   "devDependencies": {
@@ -28,6 +27,7 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "three": "0.170.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   },

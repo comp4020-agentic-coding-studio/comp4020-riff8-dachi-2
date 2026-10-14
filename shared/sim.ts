@@ -27,7 +27,7 @@ import {
 } from "./content.ts";
 import type { Building, Command, Ledger, Player, RoomState, StageSummary, Tile } from "./protocol.ts";
 import { SCHEMA_VERSION } from "./protocol.ts";
-import { generateStage } from "./worldgen.ts";
+import { generateStage, sunSpawn } from "./worldgen.ts";
 
 /** What changed during one call: the server turns this into a delta. */
 export interface Changes {
@@ -121,7 +121,7 @@ export function createRoom(code: string, seed: number, pace: Pace): RoomState {
 export const spawnPoint = (s: RoomState): { x: number; y: number } => {
   const st = STAGES[s.stage];
   const c = (st.size - 1) / 2;
-  if (st.id === "sun") return { x: c, y: st.size - 4 };
+  if (st.id === "sun") return sunSpawn(st.size);
   if (st.id === "system") return { x: c, y: c + 2 };
   return { x: c, y: c };
 };

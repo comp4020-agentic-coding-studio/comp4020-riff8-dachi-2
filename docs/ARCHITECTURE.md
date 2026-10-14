@@ -8,7 +8,7 @@ browser                                      one Fly machine (shared-cpu-1x, 256
 │ Next.js shell (static)    │   GET /, /play │ server/main.ts (node, type-stripped)  │
 │  app/, client/Game.tsx    │◄──────────────►│  serves out/ (Next export), /readme/  │
 │  React HUD (≤5 Hz)        │                │  POST /api/rooms, GET /api/health     │
-│  Canvas 2D renderer (rAF) │   WebSocket    │  /ws ──► server/rooms.ts               │
+│  three.js renderer (rAF)  │   WebSocket    │  /ws ──► server/rooms.ts               │
 │  client/net.ts            │◄──────────────►│          one live owner per room      │
 └───────────────────────────┘    /ws         │          shared/sim.ts (pure)         │
                                              │  server/store.ts ──► SQLite on /data  │
@@ -27,7 +27,7 @@ browser                                      one Fly machine (shared-cpu-1x, 256
 ## Choices, and why
 
 - **Next.js as a static export.** The prompt wants Next.js for the shell and a separate long-running service for the simulation. Exporting the shell to static files and serving them from the game server keeps that separation (Next never runs a request handler, let alone the loop) while fitting the course's one-machine, one-port Fly setup. The game is loaded with `next/dynamic` and `ssr: false` from inside a Client Component (`app/play/PlayShell.tsx`), as the [lazy-loading guide](https://nextjs.org/docs/app/guides/lazy-loading) requires, since it touches canvas, WebSocket, AudioContext and localStorage.
-- **Canvas 2D, no engine.** A two-day prototype budget favoured the one renderer with nothing to install, learn or ship. Every asset is a few draw calls in `client/render.ts`, so the visual bible is enforced by one file. Measured frame time in the densest scene tested was about 1.2 ms (see [`TESTING.md`](TESTING.md)), so the renderer has headroom. If the art direction outgrows hand-drawn shapes, PixiJS is the natural swap: `Renderer` is the only module that draws.
+- **three.js, first person, all blocks.** The game was first an isometric Canvas 2D prototype; a later riff turned it into a first-person voxel world, which three.js handles with nothing else to ship (a build-time dependency only: the server image doesn't carry it). `client/render3d.ts` is still the only module that draws, so the visual bible is enforced by one file, and it keeps the old renderer's shape: its own `requestAnimationFrame` loop reading `GameClient.state`, never React. Every tile, deposit voxel and survey beam is an `InstancedMesh` instance, rebuilt from state only when the client's version changes, so the largest world (64×64) is a handful of draw calls. Each deposit is drawn as a fixed list of voxels of which it shows the first `ceil(slots × amt / init)`, so a harvest always visibly takes something and nothing ever grows back. Aim is a raycast from the screen centre; every voxel maps back to its tile (a leaf over a neighbouring tile still belongs to its tree). Terrain is flat: `shared/noise.ts` decides where stock lies, not the height of the ground, so nothing needs collision and walking stays unobstructed.
 - **`ws` over a room framework.** Rooms, sequencing and deduplication are about 300 lines in `server/rooms.ts`; Colyseus would have hidden exactly the parts the prompt asks to get right.
 - **`node:sqlite`, one row per room.** No native module to build, one file on the volume, a single UPSERT per save.
 
@@ -35,7 +35,7 @@ browser                                      one Fly machine (shared-cpu-1x, 256
 
 The server owns every room's state; the browser renders it and sends intentions. All mutation goes through `applyCommand` and `tick` in `shared/sim.ts`, called one at a time on Node's single thread, so every mutation is serialised. Two players placing on the same tile, two builds spending the same balance, two hands on the last unit: whichever command the server reads first wins; the other gets a reason. Payment and occupancy are committed in the same synchronous block with nothing between them that can fail.
 
-Every command is validated server-side: session (the socket's player), membership, stage generation, phase, integer and in-bounds coordinates, finite movement vectors, range (2.2 tiles to harvest, 8 to build), cooldowns, footprint and terrain, affordability, ownership, and string length.
+Every command is validated server-side: session (the socket's player), membership, stage generation, phase, integer and in-bounds coordinates, finite movement vectors, range (3.2 tiles to harvest, 8 to build; the client greys out and explains a target beyond reach rather than sending it), cooldowns, footprint and terrain, affordability, ownership, and string length.
 
 **Movement** is a continuous intent (a direction vector); the server integrates it at 10 Hz. There are no collisions, so the browser predicts its own avatar exactly and eases toward the server's answer, snapping only if more than 1.5 tiles off. Other avatars are interpolated two ticks behind the latest update.
 

@@ -75,7 +75,11 @@ Measured (Node 24.21, headless Chrome 153, on an AMD Threadripper 7960X workstat
 | server memory | same | 97 MB at start, 101--104 MB after 100 s, flat |
 | outbound traffic | same | 227 KB/s total before compact movement, 136 KB/s after (about 6.8 KB/s per connection) |
 
-Frame time leaves about tenfold headroom on this machine, which suggests a laptop will hold 60 fps, but that isn't established: no ordinary laptop was available. The "low detail" setting turns off wildlife and particles if it's needed. Interest management isn't implemented (every client gets every change in its room); at 32×32 tiles and eight players that's affordable, and it's the first thing to add if maps grow.
+Those browser rows measured the old Canvas 2D renderer. The first-person three.js renderer was measured on a Windows desktop in headless Chrome with software WebGL (SwiftShader, no GPU): **about 2.5 ms of renderer work per frame** on Earth at 1280×800 (the renderer's own `frameMs`; the GPU side isn't in that number, and a headless tab is frame-throttled, so its fps says nothing). The world is a few instanced draw calls whatever its size, so a laptop GPU should hold 60 fps, but that isn't established: no ordinary laptop was measured.
+
+**Breaking a tree, in a real browser**: a scripted headless-Chrome run (`?debug` exposes the live client and renderer to the page) walked to a tree on Earth and harvested it hit by hit, counting the voxels drawn for that tile: 16, 14, 12, 10, 8, 6, 4, 2, 0 as its stock went 8 to 0, one block-pair per hit, never more, and the archive recorded "The Old Oak was harvested bare". A target five tiles away reads as out of reach in the client, matching the server's refusal.
+
+The "low detail" setting turns off particles if it's needed. Interest management isn't implemented (every client gets every change in its room). The maps doubled for first person, so a full snapshot (sent on joining and at each world boundary, never per tick) grew: the tiles are about 115 KB of JSON on Earth (48×48) and 198 KB in the Universe (64×64), well inside the 1 MB send buffer at which a slow client is dropped. Deltas still carry only the tiles that changed. Interest management or a compact tile encoding is the first thing to add if maps grow again.
 
 Unbounded growth is guarded by design: the activity log keeps 40 entries, receipts 64 per player, interpolation 12 samples per player, toasts 3, pending commands 32; the archive and history grow by a handful of entries per world and stop at the ending.
 

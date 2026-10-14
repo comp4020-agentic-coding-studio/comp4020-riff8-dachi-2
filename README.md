@@ -10,16 +10,18 @@ The game is built from a pod's brief, _Consume the Universe_: let players enjoy 
 
 Start a world from the front page and send the invite link (or the five-letter room code) to friends. No account: your browser remembers who you are in each room.
 
-- **Walk** with WASD or the arrow keys. Zoom with the wheel or `+`/`-`.
-- **Harvest** by holding `E` (or `Space`) near a tree, rock or pond, or by clicking it. Everything goes into the room's shared stockpile.
-- **Build** with `1`--`6`. A ghost shows the footprint, green where it fits and red with the reason where it doesn't. Click to place it, or press `Enter` for the tile you're facing. `Esc` cancels.
+You play in first person, from your avatar's eyes, in a world of blocks.
+
+- **Look** by clicking the world once: the mouse then turns your head (`Esc` gives the pointer back for the panels). **Walk** with WASD or the arrow keys, relative to where you're looking.
+- **Harvest** by clicking a tree, rock, ice or pond under the crosshair, within a few steps (the outline turns grey when it's too far: walk closer), or hold `E` (or `Space`) to work the nearest one in reach. Every hit takes a block away. Everything goes into the room's shared stockpile.
+- **Build** with `1`--`6`. The outline shows the footprint, green where it fits and red where it doesn't. Click to place it, or press `Enter` for the tile under the crosshair. `Esc` cancels.
 - **Help raise** a building site by pressing `E` beside it: several people building together finish faster.
-- `I` inspects a building (what it needs, what it makes, why it's idle), `X` takes one down for half its cost back, `N` names a favourite place, `V` surveys every deposit left, `P` saves a photo, and `Shift`+`1`--`6` emotes.
+- `I` inspects a building (what it needs, what it makes, why it's idle), `X` takes one down for half its cost back, `N` names a favourite place, `V` surveys every deposit left (what's left glows through everything, under a column of light), `P` saves a photo, and `Shift`+`1`--`6` emotes.
 - `H` opens help in the game.
 
 Start with the Cooperative memo in the corner: gather, build cottages, power them, build a datacentre, put a harvester beside a grove. The stockpile panel tells you what most of your idle machines are waiting for.
 
-A world moves on when every deposit on it is gone, for everyone at once. The survey arrow points at the nearest remaining deposit, so the last few never turn into a hunt.
+A world moves on when every deposit on it is gone, for everyone at once. Survey (`V`) puts a column of light over every remaining deposit, so the last few never turn into a hunt.
 
 ## The five worlds
 
@@ -41,7 +43,7 @@ The design document, [`docs/DESIGN.md`](docs/DESIGN.md), covers the economy, pac
 
 ## How it works
 
-One Node process on Fly.io owns every room's simulation and speaks WebSocket; browsers render the world and send intentions (move, harvest, build). The browser app is Next.js, exported to static files that the same process serves, with the world drawn on a Canvas 2D in its own frame loop. Rooms persist as snapshots in SQLite on the Fly volume.
+One Node process on Fly.io owns every room's simulation and speaks WebSocket; browsers render the world and send intentions (move, harvest, build). The browser app is Next.js, exported to static files that the same process serves, with the world drawn in first person with three.js in its own frame loop. Rooms persist as snapshots in SQLite on the Fly volume.
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the stack, the protocol, authority, persistence, deployment and recovery
 - [`docs/DECISIONS.md`](docs/DECISIONS.md): the decision log, including the creative directions weighed at the start

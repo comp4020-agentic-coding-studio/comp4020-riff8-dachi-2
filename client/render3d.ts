@@ -4,12 +4,12 @@
 // buildings as stacked boxes, other players as blocky figures. The camera is
 // our own avatar's eyes; yaw and pitch are set by Game's mouse look.
 import * as THREE from "three";
-import { BUILDINGS, STAGES, type BuildingType } from "../shared/content.ts";
+import { BUILDINGS, HARVEST_RANGE, STAGES, type BuildingType } from "../shared/content.ts";
 import type { Building, RoomState, Snapshot } from "../shared/protocol.ts";
 import { blockHeight } from "../shared/noise.ts";
 import { effectiveLife, lifeCap, placementProblem } from "../shared/sim.ts";
 import type { GameClient } from "./net.ts";
-import { PLAYER_COLOURS, type View } from "./render.ts";
+import { PLAYER_COLOURS, type View } from "./view.ts";
 
 const EYE = 1.6;
 const REACH = 9;
@@ -27,6 +27,9 @@ const BUILD_LOOK: Record<BuildingType, { colour: string; roof: string; h: number
   depot: { colour: "#a58a5c", roof: "#6b5a3a", h: 2.2 },
   engine: { colour: "#6b6f88", roof: "#c9c4ff", h: 2.8 },
 };
+
+const RING: [number, number][] = [[0, -1], [1, 0], [0, 1], [-1, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]];
+const CROSS: [number, number][] = [[0, -1], [1, 0], [0, 1], [-1, 0], [0, 0]];
 
 const hash = (i: number): number => {
   let h = i * 374761393;
@@ -62,6 +65,8 @@ export class Renderer {
   private blocks: THREE.InstancedMesh | null = null;
   private logs: THREE.InstancedMesh | null = null;
   private leaves: THREE.InstancedMesh | null = null;
+  /** survey beams: a column of light over every deposit with stock left */
+  private beams: THREE.InstancedMesh | null = null;
   /** which tile each deposit voxel belongs to, by instance id */
   private owners = new Map<THREE.InstancedMesh, Int32Array>();
   private heights: number[] = [];
@@ -76,6 +81,7 @@ export class Renderer {
   private bits: Bit[] = [];
   private sun = new THREE.DirectionalLight(0xffffff, 1.6);
   private hemi = new THREE.HemisphereLight(0xffffff, 0x445533, 1.1);
+  private ambient = new THREE.AmbientLight(0xffffff, 0.75);
   private raf = 0;
   private last = performance.now();
   private hit: { tile: [number, number]; building: Building | null } | null = null;
@@ -90,15 +96,15 @@ export class Renderer {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     this.gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.camera.rotation.order = "YXZ";
-    this.scene.add(this.camera, this.sun, this.hemi);
+    this.scene.add(this.camera, this.sun, this.hemi, this.ambient);
     this.sun.position.set(-30, 50, -20);
 
     const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02));
     this.cursor = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x111111 }));
     this.scene.add(this.cursor);
 
-    this.hand = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.55), new THREE.MeshLambertMaterial({ color: 0xe0b48c }));
-    this.hand.position.set(0.38, -0.32, -0.55);
+    this.hand = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.26), new THREE.MeshLambertMaterial({ color: 0xe0b48c }));
+    this.hand.position.set(0.24, -0.2, -0.42);
     this.camera.add(this.hand);
 
     client.onTile = (i, before, after) => this.burst(i, before - after);
@@ -135,6 +141,11 @@ export class Renderer {
     return this.hit?.building ?? null;
   }
 
+  /** Whether a tile is close enough to harvest from where we stand (a little inside the server's range, which sees us a moment late). */
+  inReach(x: number, y: number): boolean {
+    return Math.hypot(x - this.client.me.x, y - this.client.me.y) <= HARVEST_RANGE - 0.15;
+  }
+
   facingTile(): [number, number] | null {
     return this.pick();
   }
@@ -146,6 +157,20 @@ export class Renderer {
   /** Horizontal unit vectors for walking, in tile coordinates (x, y). */
   forward(): [number, number] {
     return [-Math.sin(this.yaw), -Math.cos(this.yaw)];
+  }
+
+  /** How many voxels a tile's deposit is drawn with right now (for checks). */
+  voxelsAt(tile: number): number {
+    let n = 0;
+    for (const [mesh, own] of this.owners) {
+      const m = new THREE.Matrix4();
+      for (let k = 0; k < mesh.count; k++) {
+        if (own[k] !== tile) continue;
+        mesh.getMatrixAt(k, m);
+        if (m.elements[0] !== 0) n++;
+      }
+    }
+    return n;
   }
 
   photo(): string {
@@ -169,11 +194,17 @@ export class Renderer {
     this.heights = s.tiles.map((t, i) => blockHeight(s.seed, s.stage, i % s.w, Math.floor(i / s.w), t.t));
     this.ground = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), n);
     this.turf = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), n);
-    this.blocks = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), n * 2);
-    this.logs = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial({ color: 0x6b4a2f }), n * 3);
-    this.leaves = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), n * 10);
+    // sized by what the world can hold: 8 half blocks per deposit, 4 logs and 13 leaves per tree
+    const deposits = s.tiles.filter((t) => t.d).length;
+    this.blocks = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), deposits * 8 + 1);
+    this.logs = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial({ color: 0x6b4a2f }), deposits * 4 + 1);
+    this.leaves = new THREE.InstancedMesh(this.box, new THREE.MeshLambertMaterial(), deposits * 13 + 1);
     this.owners = new Map([this.blocks, this.logs, this.leaves].map((m) => [m, new Int32Array(m.count)]));
-    this.scene.add(this.ground, this.turf, this.blocks, this.logs, this.leaves);
+    if (this.beams) this.scene.remove(this.beams);
+    this.beams = new THREE.InstancedMesh(this.box, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.45, depthWrite: false, fog: false }), deposits + 1);
+    this.beams.raycast = () => {}; // light, not a thing: never in the way of the crosshair
+    this.scene.add(this.ground, this.turf, this.blocks, this.logs, this.leaves, this.beams);
+    this.surveying = false;
     for (const { group } of this.buildings.values()) this.scene.remove(group);
     this.buildings.clear();
   }
@@ -215,13 +246,13 @@ export class Renderer {
         this.ground!.setMatrixAt(i, zero);
         this.turf!.setMatrixAt(i, zero);
       } else {
-        const top = t.t === 1 ? h - 0.2 : h;
+        const top = t.t === 1 ? h - 0.2 - 0.5 * (1 - full) : h;
         m.makeScale(1, top + 3 - 0.2, 1).setPosition(x, (top - 0.2 - 3) / 2, y);
         this.ground!.setMatrixAt(i, m);
         m.makeScale(1, 0.2, 1).setPosition(x, top - 0.1, y);
         this.turf!.setMatrixAt(i, m);
-        if (t.t === 1) c.set(full > 0 ? (st.id === "earth" ? 0x3f8fd0 : 0xc8e6ff) : 0x846c56);
-        else if (t.t === 3) c.set(full > 0 ? 0xffd27a : 0x3a2828);
+        if (t.t === 1) c.set(0x846c56).lerp(new THREE.Color(st.id === "earth" ? 0x3f8fd0 : 0xc8e6ff), full > 0 ? 0.4 + 0.6 * full : 0);
+        else if (t.t === 3) c.set(0x3a2828).lerp(new THREE.Color(0xffd27a), full);
         else if (t.t === 4) c.setRGB(0.25 + hash(i) * 0.1, 0.24, 0.27);
         else {
           const k = Math.max(0, Math.min(1, effectiveLife(t, cap) / 100 + jitter));
@@ -232,31 +263,49 @@ export class Renderer {
         c.copy(rgb(pal.dead)).multiplyScalar(t.t === 1 ? 0.55 : 0.7).offsetHSL(0, 0, (hash(i * 5) - 0.5) * 0.04);
         this.ground!.setColorAt(i, c);
       }
-      // deposits on top, as whole voxels (water is the ground itself)
+      // deposits on top, as whole voxels (water is the ground itself). Every
+      // deposit is a fixed list of voxels and shows the first ceil(slots × amt
+      // / init) of them, so each harvest takes at least one away, from the top,
+      // and nothing ever comes back.
       if (!t.d || t.amt <= 0 || t.b || t.t === 1 || t.t === 3) continue;
       if (t.d === "matter" && st.id === "earth") {
-        // a tree: a trunk of logs and a crown of leaves that thins as it's cut
-        const trunk = 1 + Math.round(2 * full);
-        for (let k = 0; k < trunk; k++) voxel(this.logs!, i, x, h + k, y, null, 0.96);
+        // a tree: a trunk of logs, a 3×3 ring of leaves round its top, a crown above
+        const logs = hash(i * 17) > 0.5 ? 4 : 3;
+        const top = h + logs;
+        const slots: [THREE.InstancedMesh, number, number, number][] = [];
+        for (let k = 0; k < logs; k++) slots.push([this.logs!, x, h + k, y]);
+        for (const [dx, dz] of RING) slots.push([this.leaves!, x + dx, top - 1, y + dz]);
+        for (const [dx, dz] of CROSS) slots.push([this.leaves!, x + dx, top, y + dz]);
+        const show = Math.ceil((slots.length * t.amt) / t.init);
         const leaf = new THREE.Color(pal.matter);
-        const crown = h + trunk;
-        if (full > 0.35) {
-          for (let dz = -1; dz <= 1; dz++)
-            for (let dx = -1; dx <= 1; dx++) {
-              if (dx && dz && hash(i * 13 + dx * 3 + dz) < 0.3 * (1 - full)) continue;
-              const lift = dx || dz ? 0 : 1;
-              voxel(this.leaves!, i, x + dx, crown - 1 + lift, y + dz, leaf.clone().offsetHSL(0, 0, (hash(i + dx * 7 + dz * 11) - 0.5) * 0.08), 1);
-            }
-        } else voxel(this.leaves!, i, x, crown, y, leaf, 1);
+        for (let k = 0; k < show; k++) {
+          const [mesh, vx, vy, vz] = slots[k];
+          if (mesh === this.logs) voxel(mesh, i, vx, vy, vz, null, 0.96);
+          else voxel(mesh, i, vx, vy, vz, leaf.clone().offsetHSL(0, 0, (hash(i * 31 + k) - 0.5) * 0.1), 1);
+        }
       } else {
-        // stone, ore, ice: stacked blocks, two high while plentiful
-        c.set(pal[t.d]).offsetHSL(0, 0, (hash(i * 7) - 0.5) * 0.08);
-        voxel(this.blocks!, i, x, h, y, c);
-        if (full > 0.5) voxel(this.blocks!, i, x, h + 1, y, c.clone().offsetHSL(0, 0, 0.04), t.d === "coolant" ? 0.8 : 0.98);
+        // stone, ore, ice: a 2×2×2 heap of half blocks, taken from the top
+        const show = Math.ceil((8 * t.amt) / t.init);
+        c.set(pal[t.d]);
+        for (let k = 0; k < show; k++) {
+          const ox = (k & 1) * 0.5 - 0.25;
+          const oz = ((k >> 1) & 1) * 0.5 - 0.25;
+          const oy = (k >> 2) * 0.5;
+          voxel(this.blocks!, i, x + ox, h + oy - 0.25, y + oz, c.clone().offsetHSL(0, 0, (hash(i * 7 + k) - 0.5) * 0.1), t.d === "coolant" ? 0.46 : 0.49);
+        }
       }
     }
     for (const [mesh, k] of used) for (let j = k; j < mesh.count; j++) mesh.setMatrixAt(j, zero);
-    for (const mesh of [this.ground!, this.turf!, this.blocks!, this.logs!, this.leaves!]) {
+    let beam = 0;
+    for (let i = 0; i < s.tiles.length && beam < this.beams!.count; i++) {
+      const t = s.tiles[i];
+      if (!t.d || t.amt <= 0) continue;
+      m.makeScale(0.18, 40, 0.18).setPosition(i % s.w, 20, Math.floor(i / s.w));
+      this.beams!.setMatrixAt(beam, m);
+      this.beams!.setColorAt(beam++, c.set(pal[t.d]));
+    }
+    for (let j = beam; j < this.beams!.count; j++) this.beams!.setMatrixAt(j, zero);
+    for (const mesh of [this.ground!, this.turf!, this.blocks!, this.logs!, this.leaves!, this.beams!]) {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       mesh.computeBoundingSphere();
@@ -363,10 +412,29 @@ export class Renderer {
     const mat = new THREE.MeshLambertMaterial({ color: colour });
     for (let k = 0; k < 6; k++) {
       const mesh = new THREE.Mesh(this.box, mat);
-      mesh.scale.setScalar(0.12);
-      mesh.position.set(i % s.w, (this.heights[i] ?? 0) + 0.8, Math.floor(i / s.w));
+      mesh.scale.setScalar(0.1);
+      mesh.position.set(i % s.w + (Math.random() - 0.5) * 0.6, (this.heights[i] ?? 0) + 0.6 + Math.random(), Math.floor(i / s.w) + (Math.random() - 0.5) * 0.6);
       this.scene.add(mesh);
-      this.bits.push({ mesh, v: new THREE.Vector3((Math.random() - 0.5) * 3, 2 + Math.random() * 2, (Math.random() - 0.5) * 3), t0: performance.now() });
+      // chips fall away from what was cut, never up out of it
+      this.bits.push({ mesh, v: new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 0.8, (Math.random() - 0.5) * 2), t0: performance.now() });
+    }
+  }
+
+  private surveying = false;
+
+  /** Survey: what's left glows and draws over everything, so a spent world's last stock can be found. */
+  private applySurvey(): void {
+    if (this.beams) this.beams.visible = this.view.survey;
+    if (this.view.survey === this.surveying) return;
+    this.surveying = this.view.survey;
+    for (const mesh of [this.blocks, this.logs, this.leaves]) {
+      if (!mesh) continue;
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      mat.depthTest = !this.surveying;
+      mat.emissive.set(this.surveying ? 0x555555 : 0x000000);
+      mat.fog = !this.surveying;
+      mesh.renderOrder = this.surveying ? 10 : 0;
+      mat.needsUpdate = true;
     }
   }
 
@@ -418,6 +486,7 @@ export class Renderer {
       this.scene.fog = new THREE.Fog(new THREE.Color(st.palette.sky[1]).lerp(sky, 0.5), s.w * 0.6, s.w * 2.2);
       const dark = st.id === "system" || st.id === "universe";
       this.hemi.intensity = dark ? 0.6 : 1.1;
+      this.ambient.intensity = dark ? 0.45 : 0.75;
       this.sun.intensity = st.id === "sun" ? 2.2 : dark ? 0.8 : 1.6;
     }
     if (this.client.version !== this.lastVersion) {
@@ -453,11 +522,15 @@ export class Renderer {
       return true;
     });
 
+    this.applySurvey();
     this.aim(s);
     const tgt = this.hit?.tile;
     if (tgt) {
       const n = this.view.tool === "build" && this.view.build ? BUILDINGS[this.view.build].size : this.hit?.building ? BUILDINGS[this.hit.building.type].size : 1;
-      const tall = this.hit?.building ? BUILD_LOOK[this.hit.building.type].h + 0.3 : 1;
+      const t = s.tiles[tgt[1] * s.w + tgt[0]];
+      const bare = !this.hit?.building && !(t.d && t.amt > 0 && t.t !== 1);
+      // bare ground (or a pond) gets a flat outline on its surface; things standing on it get a box
+      const tall = this.hit?.building ? BUILD_LOOK[this.hit.building.type].h + 0.3 : bare && this.view.tool !== "build" ? 0.04 : 1;
       this.cursor.visible = true;
       this.cursor.scale.set(n, tall, n);
       let base = this.heightAt(tgt[0], tgt[1]);
@@ -468,6 +541,7 @@ export class Renderer {
         const me = s.players[this.client.you];
         mat.color.set(placementProblem(s as RoomState, this.view.build, tgt[0], tgt[1], me ? { ...me, x: this.client.me.x, y: this.client.me.y } : undefined) ? 0xe04a3a : 0x3ad06a);
       } else if (this.view.tool === "demolish") mat.color.set(0xe08a3a);
+      else if (this.view.tool === "harvest" && !this.inReach(tgt[0], tgt[1])) mat.color.set(0x8a93a6); // out of reach: walk closer
       else mat.color.set(0x111111);
       this.view.hover = tgt;
     } else {

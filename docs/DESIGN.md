@@ -24,7 +24,7 @@ Explore, gather by hand, choose a tile, build, gain a capability, meet a new dem
 
 ## Economy
 
-Everything is whole numbers, defined in [`shared/content.ts`](../shared/content.ts). Units are normalised per world rather than scaled up: a world holds about a thousand units whatever it is, so a galaxy and a grove are both "a deposit of about sixteen" and no large-number representation is needed. The scale is told by the names, the map and the camera, not by digits.
+Everything is whole numbers, defined in [`shared/content.ts`](../shared/content.ts). Units are normalised per world rather than scaled up: a world holds a few hundred units whatever it is, so a galaxy and a grove are both "a deposit of eight" and no large-number representation is needed. The scale is told by the names, the map and the camera, not by digits.
 
 - **Natural stock**: deposits on tiles, finite. Three families per world (matter, mineral, coolant), relabelled per world: timber, stone and fresh water on Earth; plasma, magnetics and shade on the Sun.
 - **Inventory**: the room's single shared stockpile. Spending is atomic and can't go negative.
@@ -72,9 +72,9 @@ Restoration isn't in this version: a cosmetic regrowth that didn't refill stock 
 
 ## Stages and transitions
 
-Each world is data in `STAGES` plus one mechanic switch in the economy tick. Map sizes (24, 26, 28, 30, 32 tiles square) grow with each stage; profiling showed even the largest is cheap (see [`TESTING.md`](TESTING.md)), so they're sized for pacing, not performance.
+Each world is data in `STAGES` plus one mechanic switch in the economy tick. Map sizes (48, 52, 56, 60, 64 tiles square, doubled for first person, where a 24-tile island felt like a room) grow with each stage. The stock didn't double with them: deposits are placed by seeded Perlin noise (`shared/noise.ts`) where a per-family field peaks, so they gather in groves, ridges and ponds (water in the valleys of an elevation field, stone on its rises, trees following a separate moisture field, Earth's pond grown as one connected body), and the score leans toward the middle of the map so the walk between groves stays short. Counts per family are exact and the same `(seed, stage)` always gives the same map. The space worlds' rings and remnants scale with the map.
 
-**Exhaustion is exact.** A world ends when every deposit tile's remaining stock is zero, and nothing else counts: inventory, power, scenery. Each family keeps a ledger, `initial = remaining + extracted + destroyed`, asserted every tick in the spec. Buildings can't be placed on a deposit with stock left, and nothing blocks movement, so no deposit can ever be trapped or unreachable. The survey overlay (`V`) outlines every remaining deposit and an arrow points at the nearest.
+**Exhaustion is exact.** A world ends when every deposit tile's remaining stock is zero, and nothing else counts: inventory, power, scenery. Each family keeps a ledger, `initial = remaining + extracted + destroyed`, asserted every tick in the spec. Buildings can't be placed on a deposit with stock left, and nothing blocks movement, so no deposit can ever be trapped or unreachable. Survey (`V`) makes every remaining deposit glow through everything and puts a column of light over it, visible across the map.
 
 **Transition.** The server takes the last unit, records the world's summary and archive, switches the room to `transition` (mutations refused), persists, and broadcasts. Nine seconds later (five on the rapid preset) it generates the next world from the room's seed, increments the stage generation, persists, and sends everyone a fresh snapshot. No final payment, no readiness vote, so an absent player can't block anyone. Carried forward: identity, colour, stats, the history and archive, and the Bottled Sun. Each world starts with a small Cooperative "starter crate" of materials; inventory from the old world stays behind.
 
@@ -96,23 +96,23 @@ Each world is data in `STAGES` plus one mechanic switch in the economy tick. Map
 
 ## Pacing
 
-Measured headless with hand-harvest-only bots, the slowest honest strategy (machines are faster):
+Measured headless with hand-harvest-only bots at normal pace, the slowest honest strategy (machines are faster): `node scripts/pacing.ts 1 2 4`.
 
 | Players | Earth ends | Campaign ends |
 | --- | --- | --- |
-| 1 | 15 min | 80 min |
-| 2 | 8 min | 41 min |
-| 4 | 4 min | 21 min |
+| 1 | 5 min | 29 min |
+| 2 | 3 min | 15 min |
+| 4 | 1 min | 8 min |
 
-Bots don't wander, admire or argue, and machines speed things up, so the target for an ordinary campaign is **about an hour for two to four players, roughly ten to fifteen minutes a world**, spanning sessions if they like (an empty room pauses; see the [ADR](adr/0001-empty-rooms-pause.md)). Progress scales with player count on purpose: more hands consume faster, and the stock doesn't grow to compensate. The rapid preset finishes a solo campaign in about ten minutes and a two-bot-plus-machines campaign in about six.
+The first measure (15 and 80 minutes solo) came from worlds holding over a thousand units each, 612 of them timber on Earth. Playtesting in first person found stripping a world a grind, trees above all, so every deposit now holds 8 units (eight harvests by hand), and each world has about a third of its old stock: Earth has 22 trees, 12 stone outcrops and a 12-tile pond (176 timber, 96 stone, 96 water). A player sees a tree lose a block on every hit and fall in eight. Bots walk straight to the nearest deposit and never stop, so people take two to three times as long: the target is now **about half an hour to an hour for two to four players, five to ten minutes a world**. That's short enough that consuming the world is achievable, which is the point, and Earth still has enough groves that the first felling is a loss. Progress scales with player count on purpose: more hands consume faster, and the stock doesn't grow to compensate. The rapid preset (ten units a harvest) clears a deposit in one hit.
 
 ## Visual and audio bible
 
-- **Camera**: 2:1 isometric (tiles 64×32 world units), follows your avatar, zoom 0.5--2.2.
-- **Forms**: rounded, soft dark outline (`rgba(40,30,40,0.55)`), light from the upper left (left faces lighter than right).
+- **Camera**: first person at eye height (1.6 blocks), mouse look, a small walk bob (none with reduced motion), a held hand that swings on every harvest. During a transition and after the ending the camera rises over the whole spent world.
+- **Forms**: blocks. One ground column per tile with a turf block whose colour is the tile's life; trees are a trunk of 3--4 logs under a 3×3 ring and a cross of leaves; stone, ore and ice are a 2×2×2 heap of half blocks; buildings are a body and a roof slab with a flag in the owner's colour. A deposit loses voxels from the top as it's harvested and never gains them. Sun and soft ambient light, sky colour and fog per world.
 - **Palette**: one per world, a "lush" and a "dead" ground colour that tiles interpolate between by life; deposits in each world's three family colours.
 - **Characters**: round little people on Earth, suited on Mars, drones at the Sun, probes in the Solar System, glowing wisps in the Universe; always in the player's colour with a name label (and "(you)"), facing their direction, bobbing when walking, swinging a tool when harvesting.
-- **Occlusion**: tall buildings turn translucent when anyone stands behind them.
+- **Occlusion**: buildings under construction are translucent; nothing blocks movement, so you can always walk round or through.
 - **Interface**: warm paper cards, rounded, a small HUD, the world dominating the screen.
 - **Motion**: wildlife, swaying trees, pond shimmer, factory smoke, data-centre LEDs, harvester bob, relay pulses. "Reduced motion" (defaulting to the OS setting) stops ambient animation and camera easing.
 - **Sound**: procedural Web Audio on three separately controlled buses (music, ambience, effects), started only by an explicit click.

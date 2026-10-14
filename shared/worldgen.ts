@@ -16,6 +16,9 @@ export function rng(seed: number): () => number {
   };
 }
 
+/** Where the Sun world starts you: below the star, as far out as the 28-wide original. */
+export const sunSpawn = (w: number): { x: number; y: number } => ({ x: (w - 1) / 2, y: (w - 1) / 2 + 10.5 });
+
 export interface Generated {
   tiles: Tile[];
   buildings: Building[];
@@ -68,13 +71,15 @@ export function generateStage(seed: number, stageIndex: number): Generated {
     const salt = family === "matter" ? 11 : family === "mineral" ? 23 : 37;
     const scale = w / (1 + 1.4 * Math.sqrt(clusters));
     const land = stageIndex < 2;
+    // stock leans toward the middle of the map, so a wide world isn't a long walk between groves
+    const centre = (x: number, y: number): number => 0.45 * (dist(x, y, c, c) / c) ** 2;
     const score = (x: number, y: number): number => {
       const own = moisture(seed + salt, stageIndex, x, y, scale);
-      if (!land) return own;
+      if (!land) return own - centre(x, y);
       const h = elevation(seed, stageIndex, x, y);
-      if (family === "coolant") return 1 - h + own * 0.15;
-      if (family === "mineral") return h * 0.7 + own * 0.3;
-      return own - Math.max(0, 0.3 - h);
+      if (family === "coolant") return 1 - h + own * 0.15 - centre(x, y);
+      if (family === "mineral") return h * 0.7 + own * 0.3 - centre(x, y);
+      return own - Math.max(0, 0.3 - h) - centre(x, y);
     };
     const candidates: [number, number][] = [];
     for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) if (ok(x, y)) candidates.push([y * w + x, score(x, y) + r() * 1e-6]);
@@ -130,18 +135,20 @@ export function generateStage(seed: number, stageIndex: number): Generated {
         tiles[i].d = "matter";
         tiles[i].amt = tiles[i].init = stage.families.matter.perTile;
       }
-      spawn = { x: c, y: w - 4 };
+      spawn = sunSpawn(w);
       blobs("mineral", stage.families.mineral.tiles, 4, (x, y) => free(x, y) && dist(x, y, c, c) > 6);
       blobs("coolant", stage.families.coolant.tiles, 3, (x, y) => free(x, y) && dist(x, y, c, c) > 9);
       break;
     }
     case "system": {
-      const ring = (x: number, y: number): number => dist(x, y, c, c);
+      // radii were drawn for a 30-wide map; scale them with this one
+      const k = w / 30;
+      const ring = (x: number, y: number): number => dist(x, y, c, c) / k;
       setTerrain((x, y) => ring(x, y) > 3.2, 2);
       setTerrain((x, y) => ring(x, y) >= 8 && ring(x, y) <= 11.5, 0); // the belt
-      setTerrain((x, y) => dist(x, y, 4, 4) <= 2.3, 4, "the Sun's husk");
-      setTerrain((x, y) => dist(x, y, w - 5, 5) <= 1.6, 4, "spent Earth");
-      setTerrain((x, y) => dist(x, y, 5, w - 5) <= 1.6, 4, "spent Mars");
+      setTerrain((x, y) => dist(x, y, 4 * k, 4 * k) <= 2.3 * k, 4, "the Sun's husk");
+      setTerrain((x, y) => dist(x, y, w - 5 * k, 5 * k) <= 1.6 * k, 4, "spent Earth");
+      setTerrain((x, y) => dist(x, y, 5 * k, w - 5 * k) <= 1.6 * k, 4, "spent Mars");
       spawn = { x: c, y: c + 2 };
       place("depot", Math.floor(c), Math.floor(c) - 1, "Cooperative Depot");
       blobs("matter", stage.families.matter.tiles, 6, (x, y) => free(x, y) && ring(x, y) >= 8);
@@ -152,7 +159,7 @@ export function generateStage(seed: number, stageIndex: number): Generated {
     case "universe": {
       setTerrain(() => true, 2);
       setTerrain((x, y) => x < 7 && y > w - 8, 4, "the old Solar System");
-      setTerrain((x, y) => dist(x, y, c, c) <= 2.5, 0);
+      setTerrain((x, y) => dist(x, y, c, c) <= 2.5 * (w / 32), 0);
       place("engine", 1, w - 7, "Earth Engine");
       place("engine", 4, w - 6, "Mars Engine");
       place("engine", 1, w - 3, "Sun Husk Engine");

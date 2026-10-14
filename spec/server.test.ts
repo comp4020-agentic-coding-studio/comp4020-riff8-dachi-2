@@ -98,10 +98,16 @@ async function joined(url: string, room: string, name: string, token?: string): 
 async function walkToDeposit(b: Bot): Promise<[number, number]> {
   const s = b.snap!;
   const me = s.players[b.you];
-  const i = s.tiles.findIndex((t, k) => t.d && t.amt > 0 && Math.hypot((k % s.w) - me.x, Math.floor(k / s.w) - me.y) < 12);
+  // the nearest deposit: on the wide maps the first one in reading order can be far off
+  let i = -1;
+  let bd = Infinity;
+  s.tiles.forEach((t, k) => {
+    const d = Math.hypot((k % s.w) - me.x, Math.floor(k / s.w) - me.y);
+    if (t.d && t.amt > 0 && t.t === 0 && d < bd) [i, bd] = [k, d];
+  });
   const x = i % s.w;
   const y = Math.floor(i / s.w);
-  for (let step = 0; step < 60; step++) {
+  for (let step = 0; step < 120; step++) {
     const p = b.snap!.players[b.you];
     const dx = x - p.x;
     const dy = y - p.y;

@@ -76,7 +76,7 @@ describe("resource accounting", () => {
     expect(boundaries).toEqual([2, 3, 4, 5]);
     expect(s.history.map((h) => h.stage)).toEqual(STAGES.map((st) => st.id));
     for (const h of s.history) for (const f of FAMILIES) expect(h.ledger[f].remaining).toBe(0);
-  });
+  }, 60_000); // five wide worlds, every tick checked
 
   it("charges a building's cost once and salvages strictly less than it", () => {
     const { s, ch } = room();

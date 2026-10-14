@@ -7,7 +7,7 @@ import { BUILDINGS, EMOTES, FAMILIES, HARVEST_RANGE, STAGES, buildingName, type 
 import type { Building, Snapshot } from "../shared/protocol.ts";
 import { averageLife } from "../shared/sim.ts";
 import { GameClient } from "./net.ts";
-import { PLAYER_COLOURS, type Tool, type View } from "./render.ts";
+import { PLAYER_COLOURS, type Tool, type View } from "./view.ts";
 import { Renderer } from "./render3d.ts";
 import { Sound, type Mix } from "./audio.ts";
 
@@ -51,7 +51,7 @@ export default function Game({ room, name }: { room: string; name: string }): Re
   const [client, setClient] = useState<GameClient | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const soundRef = useRef(new Sound());
-  const viewRef = useRef<View>({ tool: "harvest", build: null, hover: null, keyboardTarget: true, survey: false, selected: null, reducedMotion: prefersReducedMotion(), low: false, zoom: 1 });
+  const viewRef = useRef<View>({ tool: "harvest", build: null, hover: null, keyboardTarget: true, survey: false, selected: null, reducedMotion: prefersReducedMotion(), low: false });
   const [, force] = useState(0);
   const [help, setHelp] = useState(false);
   const [naming, setNaming] = useState<[number, number] | null>(null);
@@ -85,6 +85,8 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     };
     c.connect();
     r.start();
+    // ?debug exposes the live client and renderer, for scripted browser checks
+    if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { plenty: { client: c, renderer: r } });
     setClient(c);
     return () => {
       r.stop();
@@ -181,8 +183,6 @@ export default function Game({ room, name }: { room: string; name: string }): Re
         rerender();
       } else if (k === "p") photo();
       else if (k === "h" || k === "?") setHelp((h) => !h);
-      else if (k === "=" || k === "+") zoomBy(1.15);
-      else if (k === "-") zoomBy(1 / 1.15);
     };
     const up = (e: KeyboardEvent): void => {
       const k = e.key.toLowerCase();
@@ -232,10 +232,6 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     view.build = type;
     view.selected = null;
     rerender();
-  }
-
-  function zoomBy(k: number): void {
-    view.zoom = Math.max(0.5, Math.min(2.2, view.zoom * k));
   }
 
   /** Harvest (or help build) the best thing in reach: the forgiving keyboard path. */
@@ -316,11 +312,19 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       e.currentTarget.requestPointerLock();
       return;
     }
-    rendererRef.current?.swing();
-    const b = rendererRef.current?.pickBuilding();
-    if (b && view.tool !== "build") return act(b.x, b.y);
-    const t = rendererRef.current?.pick();
-    if (t) act(t[0], t[1]);
+    const r = rendererRef.current;
+    if (!r) return;
+    const b = r.pickBuilding();
+    const t = b && view.tool !== "build" ? ([b.x, b.y] as [number, number]) : r.pick();
+    if (!t) return;
+    // a harvest the server would refuse for distance is caught here, with the reason, rather than sent
+    const tile = client?.state?.tiles[t[1] * client.state.w + t[0]];
+    if (view.tool === "harvest" && tile && ((tile.d && tile.amt > 0) || (b && b.work < BUILDINGS[b.type].build * 10)) && !r.inReach(t[0], t[1])) {
+      client?.toast("Too far: walk closer.", "bad");
+      return;
+    }
+    r.swing();
+    act(t[0], t[1]);
   };
 
   const st = s ? STAGES[s.stage] : null;
