@@ -1,0 +1,110 @@
+# Testing and evidence
+
+What was checked, how, and what it showed. Targets and results are kept apart, and anything not tested says so.
+
+## Automated tests
+
+`pnpm check` typechecks and runs every `spec/*.test.ts` against a running server (`APP_URL`, default `:8080`). CI runs it against the Docker image Fly deploys, with a throwaway `/data`.
+
+**`spec/sim.test.ts`**, the simulation with no browser or socket:
+
+- resource accounting: `initial = remaining + extracted + destroyed` for every family on every tick of a whole two-player campaign, inventories never negative or non-integer, and the campaign reaches the ending
+- exactly one transition per exhausted world (stage generations 2, 3, 4, 5) and one history entry per world, each ending at zero remaining
+- a building's cost is charged once; salvage returns strictly less than the cost
+- furnace smoke records burnt stock as _destroyed_, and the ledger still balances
+- two players placing on the same tile: one building, one charge, the second told why
+- two players spending the same balance: the second refused, nothing negative
+- two players taking the last unit: one succeeds, the world ends exactly once
+- a retried command id applies once
+- a command for a previous stage generation is refused
+- malformed, non-finite, fractional, out-of-bounds, unknown, out-of-range and unauthorised commands are refused; only the builder or host can demolish
+- no building on a deposit with stock left; a spent deposit can be built on
+- names are stripped of control characters and capped
+- mutations are refused during a transition, and the next world admits them
+- only applied commands are receipted, so a refused command can be honestly retried
+- seats count connected players; departed identities never fill a room, and past 32 the longest-gone is forgotten
+- the restraint ending: only in the Universe, only when everyone present agrees, harvesting withdraws a vote, a holdout's dropped connection never completes it, and the ledger still balances with stock left
+- a crash mid-transition (state serialised at the Sun's boundary, restored, resumed) yields the same next world, the same generation and the same Bottled Sun as the uninterrupted run: no duplicate generation, no doubled carryover
+
+**`spec/server.test.ts`**, the real server over HTTP and WebSocket:
+
+- `/`, `/play/` and `/api/health` answer
+- a room can't be created, and a WebSocket can't open, from a foreign origin
+- **real time**: one player's harvest reaches a second open session in under a second, without a reload
+- a returning browser's token restores its identity; an unknown token gets a new player
+- a resent harvest applies once (acknowledged twice); a command from a stale incarnation is refused with a fresh snapshot
+- messages built to throw when coerced (an `id` or `n` that's an object with a broken `toString`) are refused, and the server and room carry on: an independent review found this crashed the whole process
+- malformed messages are refused without disturbing the room
+- **restart recovery**: a private server on its own data directory is stopped with SIGTERM and restarted; the player rejoins as themselves under a new incarnation and the harvested tile is as they left it
+- **crash recovery**: the same after SIGKILL, once the 5 s save interval has passed
+
+**`spec/invariants.test.ts`**, the course's: `/` answers and `/readme/` publishes this README with every heading.
+
+30 tests, all passing locally and against the production Docker image.
+
+## Multiplayer playthroughs
+
+`scripts/playbot.ts` joins a room over the real protocol and plays: walks, harvests by hand, and builds each world's machine (homes, power, compute, extractors, domes, radiators, relays) wherever the server accepts. Bots and real browsers (driven by `agent-browser`, headless Chrome) shared rooms throughout:
+
+- **Full campaign**: two bots and two browsers, rapid preset, Earth to the ending in about six minutes. Every stage boundary, the Bottled Sun carryover, the remnant worlds in the Solar System and Universe, and the ending's archive appeared in both browsers.
+- **Both browsers saw the same world**: same buildings, same damage, each other's avatars and names, emotes.
+- **Reconnect**: the server was restarted (SIGTERM) under a live browser session; the page showed "reconnecting", came back by itself under the new incarnation, and the next keyboard action went through.
+- **Keyboard only**: walk, harvest with `E`, choose a building with `2`, place it with `Enter`. This caught a real bug (a stump refusing a building) and a crash path in the key handler.
+- **Dense rooms**: one room at the 8-player cap (seven bots and a browser) plus three more rooms of four bots each.
+- **Delay and jitter**: a TCP proxy adding 150 ± 100 ms each way, in order (a 430 ms round trip as measured by the in-game ping), with a browser and a bot playing through it beside an unlagged browser. Movement stayed smooth (own avatar is predicted), actions were confirmed a round trip later, nothing was applied twice or lost, and the stockpile stayed consistent across all three.
+
+## Visual inspection
+
+Screenshots at 1920×1080, 1600×900, 1400×850, 1280×720 and 390×844 of: lush Earth, industrial Earth (smoke, browned rings around furnaces), spent Earth (12% living land), Mars with domes and a colony stalled on ice, the Sun bright and dimmed, the Solar System with relays and remnants, the Universe with its stars going out, a transition card and the ending. Findings fixed along the way: overlapping HUD panels at 1280×720, a sky that stayed bright after the Sun was spent, an Earth that never looked desolate (the water-table rule), toasts stacking, duplicate player names.
+
+At 390×844 the game renders and the HUD fits (secondary panels hide), but it's a desktop game: there are no touch controls.
+
+**Accessibility**: `agent-browser a11y` (axe-core 4.12 in a real browser) reports no violations on the front page or the play screen with the HUD loaded. Every control is a native button or input with a text label; building status and stock levels are text, never colour alone; there's a reduced-motion setting defaulting to the OS preference; audio starts only on a click and has three volume controls.
+
+## Performance
+
+Targets: 60 fps at 1080p on an ordinary laptop; server tick well inside 100 ms; memory well inside the 256 MB Fly machine; no unbounded growth.
+
+Measured (Node 24.21, headless Chrome 153, on an AMD Threadripper 7960X workstation, which is much faster than an ordinary laptop):
+
+| Measure | Scene | Result |
+| --- | --- | --- |
+| browser frame time | 1920×1080, Mars, 8 players and ~20 buildings | ~1.2 ms (moving average in the settings panel) |
+| browser frame time | 1280×720 through the 430 ms lag proxy | ~1.6 ms |
+| server step (all rooms) | 6 rooms, 20 connections, rapid economy | 0.5--1.4 ms typical, 7.4 ms worst (a stage boundary: save plus snapshots) |
+| server memory | same | 97 MB at start, 101--104 MB after 100 s, flat |
+| outbound traffic | same | 227 KB/s total before compact movement, 136 KB/s after (about 6.8 KB/s per connection) |
+
+Frame time leaves about tenfold headroom on this machine, which suggests a laptop will hold 60 fps, but that isn't established: no ordinary laptop was available. The "low detail" setting turns off wildlife and particles if it's needed. Interest management isn't implemented (every client gets every change in its room); at 32×32 tiles and eight players that's affordable, and it's the first thing to add if maps grow.
+
+Unbounded growth is guarded by design: the activity log keeps 40 entries, receipts 64 per player, interpolation 12 samples per player, toasts 3, pending commands 32; the archive and history grow by a handful of entries per world and stop at the ending.
+
+## Playtesting questions
+
+Answered from bot runs and browser play, not from human playtesters, which this run didn't have:
+
+- **Is the first harvest satisfying?** It has a swing, a pop of "+1 timber", a dust burst and a tone, and a tree visibly thins and becomes a stump. A human should judge the feel.
+- **Are buildings useful?** Each unlocks something the previous couldn't do, and the memo walks through the order.
+- **Does automation produce new decisions?** Yes, mostly about shortages: the dense Mars test stalled a whole colony on ice, which led to the bottleneck line in the stockpile panel.
+- **Can players understand shortages?** Every idle building says why in its inspect panel, and the stockpile panel names the commonest reason.
+- **Does environmental loss register without a speech?** After the water-table rule, yes: green to brown across the whole island, birds and birdsong thinning, archive lines as places go.
+- **Does cooperation change the experience?** Shared stockpile, helping raise sites, and dependent chains (ice before domes before datacentres) reward dividing work. Untested with humans.
+- **Is the end of a stage tedious?** The survey arrow removes the hunt; the last few deposits are still gathered by hand if the machines have run dry.
+- **Does each scale feel different?** Each world changes one rule (smoke, air, heat, relays and a finite reserve, legacy engines) and the look and avatar change with it.
+- **Does the ending land?** It's deliberate and quiet. Whether it lands needs people.
+
+## Not done
+
+- **Deployment**: this run doesn't deploy; CI deploys the pod's app on push. Nothing here claims a verified live deployment.
+- **Human playtesting**: everything above is bots and a scripted browser.
+- **An ordinary laptop**: see performance.
+- **Mobile and touch**: renders, isn't playable.
+
+## Next development, in priority order
+
+1. Human playtests of the first ten minutes and the ending, then tuning from what people actually do.
+2. Interest management (send each client only nearby tile changes) before maps grow.
+3. Sprite art for buildings and avatars, replacing the procedural shapes one family at a time (see [`ASSETS.md`](ASSETS.md)).
+4. Host moderation: remove a player, lock a room to new joiners.
+5. A photo album kept per room, so the archive has pictures, not just names.
+6. Touch controls.

@@ -24,3 +24,10 @@ mise.local.toml
 # your course API key, and this repo goes public when you ship. Your tracked
 # harness is CLAUDE.md (and any AGENTS.md), not this directory.
 .claude/
+
+# Next.js build output (out/ is served by the game server)
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+scratch/

@@ -1,0 +1,281 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, inject, it } from "vitest";
+import WebSocket from "ws";
+import type { ServerMsg, Snapshot, Delta, Command } from "../shared/protocol.ts";
+import { PROTOCOL_VERSION } from "../shared/protocol.ts";
+
+// The real server over HTTP and WebSocket: what a browser actually talks to.
+const baseUrl = inject("baseUrl");
+
+class Bot {
+  ws: WebSocket;
+  msgs: ServerMsg[] = [];
+  snap: Snapshot | null = null;
+  inc = "";
+  you = "";
+  token = "";
+  private waiters: (() => void)[] = [];
+  private n = 0;
+
+  constructor(url: string, origin: string) {
+    this.ws = new WebSocket(url.replace(/^http/, "ws") + "/ws", { headers: { origin } });
+    this.ws.on("message", (raw) => {
+      const m = JSON.parse(raw.toString()) as ServerMsg;
+      this.msgs.push(m);
+      if (m.t === "welcome") {
+        this.snap = m.snap;
+        this.inc = m.inc;
+        this.you = m.you;
+        this.token = m.token;
+      }
+      if (m.t === "delta" && this.snap) {
+        for (const [i, t] of m.tiles ?? []) this.snap.tiles[i] = t;
+        for (const p of m.players) this.snap.players[p.id] = p;
+        for (const [id, x, y] of m.moves ?? []) Object.assign(this.snap.players[id] ?? {}, { x, y });
+      }
+      for (const w of this.waiters.splice(0)) w();
+    });
+  }
+
+  open(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.ws.once("open", () => resolve());
+      this.ws.once("error", reject);
+    });
+  }
+
+  send(m: unknown): void {
+    this.ws.send(JSON.stringify(m));
+  }
+
+  hello(room: string, name: string, token?: string): void {
+    this.send({ t: "hello", v: PROTOCOL_VERSION, room, name, token });
+  }
+
+  cmd(c: Command, id = `t${this.n++}`, inc = this.inc): string {
+    this.send({ t: "cmd", id, inc, gen: this.snap!.gen, c });
+    return id;
+  }
+
+  async until(pred: (m: ServerMsg) => boolean, ms = 3000): Promise<ServerMsg> {
+    const deadline = Date.now() + ms;
+    let seen = 0;
+    for (;;) {
+      for (; seen < this.msgs.length; seen++) if (pred(this.msgs[seen])) return this.msgs[seen];
+      if (Date.now() > deadline) throw new Error("timed out waiting for a message");
+      await new Promise<void>((r) => {
+        this.waiters.push(r);
+        setTimeout(r, 100);
+      });
+    }
+  }
+
+  close(): void {
+    this.ws.close();
+  }
+}
+
+const originOf = (url: string): string => new URL(url).origin;
+
+async function newRoom(url: string, pace = "normal"): Promise<string> {
+  const res = await fetch(new URL("/api/rooms", url), { method: "POST", headers: { origin: originOf(url), "content-type": "application/json" }, body: JSON.stringify({ pace }) });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { code: string }).code;
+}
+
+async function joined(url: string, room: string, name: string, token?: string): Promise<Bot> {
+  const b = new Bot(url, originOf(url));
+  await b.open();
+  b.hello(room, name, token);
+  await b.until((m) => m.t === "welcome");
+  return b;
+}
+
+/** Walk a bot next to the nearest deposit (by moving its intent and waiting). */
+async function walkToDeposit(b: Bot): Promise<[number, number]> {
+  const s = b.snap!;
+  const me = s.players[b.you];
+  const i = s.tiles.findIndex((t, k) => t.d && t.amt > 0 && Math.hypot((k % s.w) - me.x, Math.floor(k / s.w) - me.y) < 12);
+  const x = i % s.w;
+  const y = Math.floor(i / s.w);
+  for (let step = 0; step < 60; step++) {
+    const p = b.snap!.players[b.you];
+    const dx = x - p.x;
+    const dy = y - p.y;
+    if (Math.hypot(dx, dy) < 1.2) break;
+    b.cmd({ k: "move", dx, dy });
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  b.cmd({ k: "move", dx: 0, dy: 0 });
+  await new Promise((r) => setTimeout(r, 250));
+  return [x, y];
+}
+
+describe("pages", () => {
+  it("serves the app shell, the play screen and a health check", async () => {
+    for (const p of ["/", "/play/"]) expect((await fetch(new URL(p, baseUrl))).status).toBe(200);
+    const h = (await (await fetch(new URL("/api/health", baseUrl))).json()) as { ok: boolean };
+    expect(h.ok).toBe(true);
+  });
+
+  it("refuses to create a room from another site, and refuses a foreign WebSocket", async () => {
+    const res = await fetch(new URL("/api/rooms", baseUrl), { method: "POST", headers: { origin: "https://evil.example" }, body: "{}" });
+    expect(res.status).toBe(403);
+    const ws = new WebSocket(baseUrl.replace(/^http/, "ws") + "/ws", { headers: { origin: "https://evil.example" } });
+    await expect(new Promise((resolve, reject) => {
+      ws.once("open", resolve);
+      ws.once("error", reject);
+    })).rejects.toThrow();
+  });
+});
+
+describe("real time", () => {
+  it("one player's harvest reaches another open session within a second, without a reload", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    const b = await joined(baseUrl, room, "Bo");
+    const [x, y] = await walkToDeposit(a);
+    const idx = y * a.snap!.w + x;
+    const before = b.snap!.tiles[idx].amt;
+    const sent = Date.now();
+    a.cmd({ k: "harvest", x, y });
+    await b.until((m) => m.t === "delta" && !!(m as Delta).tiles?.some(([i, t]) => i === idx && t.amt < before), 1000);
+    expect(Date.now() - sent).toBeLessThan(1000);
+    a.close();
+    b.close();
+  });
+
+  it("a returning browser gets its own identity back; a stranger gets a new one", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    const { you, token } = a;
+    a.close();
+    await new Promise((r) => setTimeout(r, 200));
+    const again = await joined(baseUrl, room, "Ada", token);
+    expect(again.you).toBe(you);
+    const stranger = await joined(baseUrl, room, "Mallory", "not-a-real-token");
+    expect(stranger.you).not.toBe(you);
+    again.close();
+    stranger.close();
+  });
+
+  it("a resent harvest applies once, and a stale incarnation is refused with a fresh snapshot", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    const [x, y] = await walkToDeposit(a);
+    const idx = y * a.snap!.w + x;
+    const before = a.snap!.tiles[idx].amt;
+    a.cmd({ k: "harvest", x, y }, "dup-1");
+    await a.until((m) => m.t === "ack" && m.id === "dup-1");
+    await new Promise((r) => setTimeout(r, 600));
+    a.cmd({ k: "harvest", x, y }, "dup-1");
+    await a.until((m) => m.t === "ack" && m.id === "dup-1" && a.msgs.filter((q) => q.t === "ack" && q.id === "dup-1").length === 2);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(a.snap!.tiles[idx].amt).toBe(before - 1);
+    const welcomes = a.msgs.filter((m) => m.t === "welcome").length;
+    a.cmd({ k: "harvest", x, y }, "stale-1", "not-this-incarnation");
+    const ack = await a.until((m) => m.t === "ack" && m.id === "stale-1");
+    expect(ack).toMatchObject({ ok: false });
+    await a.until(() => a.msgs.filter((m) => m.t === "welcome").length > welcomes);
+    a.close();
+  });
+
+  it("survives messages built to throw when coerced", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    a.send({ t: "cmd", id: { toString: 1 }, inc: "stale", gen: 1, c: { k: "emote", e: "wave" } });
+    a.send({ t: "ping", n: { toString: 1 } });
+    await a.until((m) => m.t === "pong");
+    expect((await fetch(new URL("/api/health", baseUrl))).status).toBe(200);
+    const b = await joined(baseUrl, room, "Bo");
+    expect(Object.keys(b.snap!.players)).toHaveLength(2);
+    a.close();
+    b.close();
+  });
+
+  it("drops oversized and malformed messages without dropping the room", async () => {
+    const room = await newRoom(baseUrl);
+    const a = await joined(baseUrl, room, "Ada");
+    a.send({ t: "cmd", id: "x", inc: a.inc, gen: a.snap!.gen, c: { k: "harvest", x: "lots", y: null } });
+    await a.until((m) => m.t === "ack" && m.id === "x" && !m.ok);
+    a.ws.send("{not json");
+    await a.until((m) => m.t === "error" && m.reason === "malformed message");
+    const b = await joined(baseUrl, room, "Bo");
+    expect(Object.keys(b.snap!.players)).toHaveLength(2);
+    a.close();
+    b.close();
+  });
+});
+
+describe("persistence", () => {
+  // A private server against its own data directory, so it can be killed.
+  const dir = mkdtempSync(join(tmpdir(), "plenty-"));
+  const procs: ChildProcess[] = [];
+  const port = 18000 + Math.floor(Math.random() * 1000);
+  const url = `http://localhost:${port}`;
+
+  async function boot(): Promise<ChildProcess> {
+    const p = spawn(process.execPath, ["server/main.ts"], { env: { ...process.env, PORT: String(port), DATA_DIR: dir }, stdio: "ignore" });
+    procs.push(p);
+    for (let i = 0; i < 100; i++) {
+      try {
+        await fetch(new URL("/api/health", url));
+        return p;
+      } catch {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    throw new Error("server didn't start");
+  }
+  const stop = (p: ChildProcess, signal: NodeJS.Signals): Promise<void> =>
+    new Promise((r) => {
+      p.once("exit", () => r());
+      p.kill(signal);
+    });
+
+  afterAll(() => {
+    for (const p of procs) p.kill("SIGKILL");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("recovers a campaign after a graceful restart, under a new incarnation", async () => {
+    let p = await boot();
+    const room = await newRoom(url);
+    const a = await joined(url, room, "Ada");
+    const [x, y] = await walkToDeposit(a);
+    const idx = y * a.snap!.w + x;
+    a.cmd({ k: "harvest", x, y }, "h1");
+    await a.until((m) => m.t === "delta" && !!m.tiles?.some(([i]) => i === idx));
+    const amt = a.snap!.tiles[idx].amt;
+    const { token, you, inc } = a;
+    await stop(p, "SIGTERM");
+    p = await boot();
+    const back = await joined(url, room, "Ada", token);
+    expect(back.you).toBe(you);
+    expect(back.inc).not.toBe(inc);
+    expect(back.snap!.tiles[idx].amt).toBe(amt);
+    back.close();
+    await stop(p, "SIGTERM");
+  }, 30_000);
+
+  it("after an abrupt kill, loses at most the last save interval", async () => {
+    let p = await boot();
+    const room = await newRoom(url);
+    const a = await joined(url, room, "Ada");
+    const [x, y] = await walkToDeposit(a);
+    const idx = y * a.snap!.w + x;
+    a.cmd({ k: "harvest", x, y }, "h1");
+    await a.until((m) => m.t === "delta" && !!m.tiles?.some(([i]) => i === idx));
+    const amt = a.snap!.tiles[idx].amt;
+    await new Promise((r) => setTimeout(r, 6000)); // > the 5 s save interval
+    await stop(p, "SIGKILL");
+    p = await boot();
+    const back = await joined(url, room, "Ada", a.token);
+    expect(back.snap!.tiles[idx].amt).toBe(amt);
+    back.close();
+    await stop(p, "SIGTERM");
+  }, 45_000);
+});

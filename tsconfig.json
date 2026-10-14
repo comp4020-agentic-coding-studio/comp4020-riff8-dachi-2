@@ -1,6 +1,7 @@
 {
-  // Covers the supplied harness (spec/, scripts/) and the app itself (src/),
-  // which is TypeScript too.
+  // One config for the game server (server/, run by node with type
+  // stripping), the shared simulation (shared/), the Next.js app shell
+  // (app/, client/) and the harness (spec/, scripts/).
   "compilerOptions": {
     "target": "ES2023",
     "module": "ESNext",
@@ -8,13 +9,46 @@
     // Imports name the file they mean, extension and all --- which is what
     // node itself wants when it runs a .ts file directly.
     "allowImportingTsExtensions": true,
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "moduleDetection": "force",
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "isolatedModules": true,
+    "incremental": true,
+    "allowJs": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["*.ts", "spec", "scripts", "src"]
+  "include": [
+    "*.ts",
+    "spec",
+    "scripts",
+    "server",
+    "shared",
+    "client",
+    "app",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out",
+    "scratch"
+  ]
 }

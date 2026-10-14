@@ -1,117 +1,68 @@
-# Long Scroll
+# Plenty
 
-A shared scroll. Anyone who visits can add one stroke of ink to it &mdash; a
-colour, and an optional short note. Nothing on it is ever edited or removed.
-Visit again and your own strokes are still there, marked as yours. Keep the
-page open and other people's strokes arrive as they make them; press _Hear
-the scroll_ and the same strokes play back as a slow, quiet piece of music.
+A cosy multiplayer game about having enough, and never stopping.
 
-## What good means here, for now
+You and up to seven friends arrive on a little meadow island: a pond with a heron, a few groves, an old oak, a hill for picnics. You gather timber and stone by hand, build cottages, power them, and teach a datacentre to do the gathering for you. It works beautifully. When the island is used up, the Plenty Cooperative has another world ready: Mars, then the Sun itself, then the whole Solar System, then the Universe. There is no sixth.
 
-This is the second version of an argument I expect to keep rewriting. Right
-now it says: **good, at this size, means small enough that everyone's mark is
-still legible, durable enough that coming back is worth it, and present
-enough that you can tell other hands are on it with you.**
+The game is built from a pod's brief, _Consume the Universe_: let players enjoy building the machine, then notice what the machine has consumed.
 
-I take my definition of "small enough" from writing about software built for
-a handful of people rather than a market. Robin Sloan's
-[_An App Can Be a Home-Cooked Meal_](https://www.robinsloan.com/notes/home-cooked-app/)
-argues that an app made for people you actually know can skip almost
-everything a product needs; his
-[five-year follow-up](https://www.robinsloan.com/lab/five-years-of-home-cooked-apps/)
-adds that the property worth protecting longest is sovereignty: who the app
-answers to. Ben Hoyt's
-[_The small web is beautiful_](https://benhoyt.com/writings/the-small-web-is-beautiful/)
-makes the same case from the stack down &mdash; fewer moving parts is most of
-why small software stays legible. Maggie Appleton's
-[_Home-Cooked Software and Barefoot Developers_](https://maggieappleton.com/home-cooked-software)
-extends Sloan's essay into a claim I want this scroll to test: the software
-worth making for a small group is the software the group could not buy,
-because nobody else needs exactly this.
+## How to play
 
-A scroll fits that brief oddly well. It has no feed, no ranking, no
-expiring anything: everyone who has ever added a stroke is still legible in
-it, in the order they arrived, the way a real scroll accumulates hands over
-years rather than resetting each session.
+Start a world from the front page and send the invite link (or the five-letter room code) to friends. No account: your browser remembers who you are in each room.
 
-The three additions in this version are all ways of feeling that the object
-is shared, not ways of turning it into a channel. **Live arrival**: a stroke
-someone adds lands on every open page within a moment, in its place at the
-end of the scroll, without a reload. **Anonymous presence**: the page says
-how many distinct hands have it open right now &mdash; a number, nothing
-else; two tabs in one browser are one hand. **Hearing the scroll**: each of
-the six inks has its own fixed pitch, so the colour sequence the scroll
-already stores can be played back, oldest stroke first, as a slow pentatonic
-piece; while you listen, a stroke from another hand sounds once as it lands.
-None of the three stores anything new. Arrival is the same row everyone's
-next load would have read; presence is held in memory only while a page is
-open, and forgotten the moment it closes; the music is computed in your own
-browser from colours that were already on the scroll.
+- **Walk** with WASD or the arrow keys. Zoom with the wheel or `+`/`-`.
+- **Harvest** by holding `E` (or `Space`) near a tree, rock or pond, or by clicking it. Everything goes into the room's shared stockpile.
+- **Build** with `1`--`6`. A ghost shows the footprint, green where it fits and red with the reason where it doesn't. Click to place it, or press `Enter` for the tile you're facing. `Esc` cancels.
+- **Help raise** a building site by pressing `E` beside it: several people building together finish faster.
+- `I` inspects a building (what it needs, what it makes, why it's idle), `X` takes one down for half its cost back, `N` names a favourite place, `V` surveys every deposit left, `P` saves a photo, and `Shift`+`1`--`6` emotes.
+- `H` opens help in the game.
 
-That is why the scroll is still not a feed, a chat, a ranking or a social
-network. A feed reorders and forgets; this only ever appends, in arrival
-order, and keeps everything. A chat is addressed to someone and invites a
-reply; a stroke is addressed to the scroll, and there is no reply, no thread
-and no way to point at another hand's mark. A ranking needs something to
-count per stroke; there are no likes, no views, nothing that makes one
-stroke outrank another. And a social network needs identities to connect;
-there are none here &mdash; no name, no profile, no list of who is present,
-only a count. One small shared object, with other people quietly at the
-other end of it.
+Start with the Cooperative memo in the corner: gather, build cottages, power them, build a datacentre, put a harvester beside a grove. The stockpile panel tells you what most of your idle machines are waiting for.
 
-**What I chose not to build, this week:** accounts (a browser is a person,
-distinguished by an anonymous cookie, nothing more); editing or deleting a
-stroke once added (the scroll is append-only, on purpose &mdash; that's a
-claim, not an oversight); any view of _who_ is present (presence is a count,
-with no names, avatars, lists or history, because a list of visitors is the
-first step towards a social graph); replies, reactions or anything else that
-lets one stroke address another; sound that starts on its own (the music
-plays only after you press the button, and stops when you ask); any limit on
-how many strokes one hand can add (a guestbook you can only sign once is a
-worse guestbook).
+A world moves on when every deposit on it is gone, for everyone at once. The survey arrow points at the nearest remaining deposit, so the last few never turn into a hunt.
 
-## What's enforced and what's judged
+## The five worlds
 
-Enforced, in `spec/`: a stroke's colour must be one of the six the form
-offers (never an arbitrary string), a note is capped at 140 characters
-server-side (not just by the input's `maxlength`), a returning hand's
-past strokes are still in the response after a fresh server restart, no
-method, from any hand, edits or deletes a stroke once it's stored, the page
-tells you in text (not just ink) which strokes are yours, every control
-on it is a native, labelled form element in the tab order, a new stroke
-reaches an open stream, no response or stream event ever carries a browser's
-internal `hand` (ownership travels only as a per-reader `yours: true` or
-`false`), and presence counts distinct hands, not open connections.
+| World | What you consume | What's different |
+| --- | --- | --- |
+| Earth | timber, stone, fresh water | Furnaces are strong, but their smoke kills groves and browns the land. Sun Gardens are clean and slow. |
+| Mars | regolith, iron, buried ice | Nothing runs outside a dome's air, and domes drink the same ice your datacentres need. |
+| The Sun | plasma, magnetics, shade | Collectors pour in power and heat; past the limit, scoops throttle until radiators shed it. The star dims as you take it. |
+| The Solar System | volatiles, asteroid metal, comet ice | No sunlight now. Every machine draws on the Bottled Sun you saved, and it doesn't refill. Miners only ship if relays link them to the Depot. |
+| The Universe | starlight, stellar cores, dark cold | Your spent worlds run as World Engines. The host can render one down for a burst of energy, forever. And if everyone here agrees, you can stop, and leave the rest alone. |
 
-Judged, by a visitor reading this page: whether the scroll reads as one
-continuous, shared object rather than a list of comments; whether finding
-your own old stroke feels like the point, not an afterthought; whether
-six ink colours and a 140-character note are enough constraint to keep this
-feeling like a scroll and not a chat log; and whether hearing it, and
-hearing another hand arrive, makes the other people on it feel nearer
-without making the page louder than the scroll.
+Spent Earth and Mars float in the Solar System as grey remnants, and the Solar System sits in a corner of the Universe. Nothing you've finished comes back fresh.
 
-## Multi-user, for now
+## What the game is arguing
 
-A person is whoever's browser holds a given anonymous `hand` cookie &mdash;
-no account, no name required. Everyone sees the same scroll; there is no
-private view. Every open page holds a read-only server-sent events stream
-(`/api/stream`); once a stroke is stored, the server pushes it down every
-open stream, each copy marked `yours: true` only for the connections whose
-cookie made it. Writes still go only through the same-origin `POST` to
-`/api/marks`; the stream accepts nothing. If the stream drops &mdash; a lost
-connection, or this app's one machine stopping when idle and starting again
-on the next request &mdash; the page reconnects by itself and fetches the
-scroll again, so a stroke made while it was away still appears.
+Every convenience has a dependency. A datacentre gives you compute, which runs harvesters, which empty the land faster, which needs more power, which on Earth means furnaces, whose smoke burns the groves you were going to harvest anyway. The game never stops you and never lectures you. It shows the cost in the land (grass browns, trees become stumps, the pond shrinks to mud, the birds thin out and the birdsong with them) and it keeps a short archive of every named place and what became of it. The ending reads that archive back to you.
 
-Presence is bookkeeping kept only in the server's memory: each open stream
-is filed under its hand, and the count is the number of hands with at least
-one stream open. Closing the last tab for a hand takes it off the count.
-The `hand` itself never leaves the server, in any response or event.
+The design document, [`docs/DESIGN.md`](docs/DESIGN.md), covers the economy, pacing, stages and ending in detail.
 
-The broadcast is in-process, which is enough because the app runs on exactly
-one Fly machine. That is a real limitation, not a detail: a second machine
-would have its own separate set of streams, and a stroke stored on one would
-never reach pages connected to the other, so a multi-machine deployment
-would need shared pub/sub (or an equivalent way to coordinate) before it
-could keep this promise.
+## How it works
+
+One Node process on Fly.io owns every room's simulation and speaks WebSocket; browsers render the world and send intentions (move, harvest, build). The browser app is Next.js, exported to static files that the same process serves, with the world drawn on a Canvas 2D in its own frame loop. Rooms persist as snapshots in SQLite on the Fly volume.
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the stack, the protocol, authority, persistence, deployment and recovery
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): the decision log, including the creative directions weighed at the start
+- [`docs/adr/0001-empty-rooms-pause.md`](docs/adr/0001-empty-rooms-pause.md): what a player finds when they come back
+- [`docs/TESTING.md`](docs/TESTING.md): what was tested, how, and what was measured
+- [`docs/ASSETS.md`](docs/ASSETS.md): where every picture and sound comes from, and how to replace them
+
+## Running it
+
+You need the versions in `mise.toml` (Node 24, pnpm 11).
+
+```sh
+pnpm install
+pnpm build          # Next.js shell -> out/
+pnpm start          # game server on :8080 (PORT and DATA_DIR override)
+```
+
+Then open <http://localhost:8080>. `pnpm check` typechecks and runs the spec against the running server (set `APP_URL` if it isn't on :8080). `node scripts/playbot.ts <ROOM> [url] [name]` joins a room with a bot that plays it, which is the quickest way to see later stages or fill a room.
+
+The rapid preset (a button on the front page) runs the same rules with the economy five times faster and a hand harvest worth ten. A solo campaign takes about ten minutes on it.
+
+## Known limits
+
+Desktop browsers with a keyboard first; it renders on a phone but isn't playable there. One server process and one Fly machine host every room, so a deploy or crash pauses all rooms for a few seconds and can roll back up to five seconds of play. There's no text chat by design (emotes only), so moderation is limited to the host taking down buildings. The full list, and what to build next, is in [`docs/TESTING.md`](docs/TESTING.md).
