@@ -129,6 +129,33 @@ say so in `docs/DESIGN.md` and adjust spawn placement or cluster counts, never
 the totals. Make sure snapshots of a 64×64 room still flow comfortably over
 the WebSocket.
 
+### 6. Less timber, and trees that only ever shrink
+
+Playtesting the quick version turned up two problems that make a world too
+slow to finish:
+
+- **There's too much stock, timber above all.** Stripping a world to move on
+  takes too long, and the trees are the worst of it. Reduce Earth's timber
+  substantially, in both tile count and `perTile` (`shared/content.ts`).
+  Then look at every family on every stage: the room should be able to strip
+  a world in a satisfying session, not a grind. The ledger invariant still
+  holds, since it's computed from whatever totals the stage defines. Re-measure
+  with hand-harvest-only bots at normal pace, then with machines, and record
+  the new numbers and the reasoning in `docs/DESIGN.md`. Earth should still
+  read as "a meadow island with a pond, a few groves and an old oak", so keep
+  enough trees that the first felling feels like a loss. The point is that
+  growth consumes the world, so consuming it must be achievable.
+- **Hitting a tree makes it look like it grows.** Players report that chopping
+  a tree makes it bigger. `shared/sim.ts` has no regrowth (`takeFrom` only
+  removes stock), so this is almost certainly the renderer. Likely suspects:
+  how the trunk height and crown are derived from `amt / init`; crown leaves
+  from neighbouring trees overlapping the tree you aimed at; the aim mapping
+  a leaf to the wrong tile; or instance slots being reassigned when
+  `updateWorld` restacks, so voxels jump between trees. Reproduce it in a
+  browser first, then fix the cause. A tree must visibly lose something on
+  every successful hit, or at least never gain anything, and vanish when
+  spent. The same goes for stone and ice stacks.
+
 ## What good looks like
 
 - A new player opens a room, clicks once, and is standing in a meadow under
