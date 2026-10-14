@@ -7,15 +7,17 @@ import { BUILDINGS, EMOTES, FAMILIES, HARVEST_RANGE, STAGES, buildingName, type 
 import type { Building, Snapshot } from "../shared/protocol.ts";
 import { averageLife } from "../shared/sim.ts";
 import { GameClient } from "./net.ts";
-import { PLAYER_COLOURS, Renderer, type Tool, type View } from "./render.ts";
+import { PLAYER_COLOURS, type Tool, type View } from "./render.ts";
+import { Renderer } from "./render3d.ts";
 import { Sound, type Mix } from "./audio.ts";
 
 const EMOTE_GLYPH: Record<Emote, string> = { wave: "👋", heart: "💛", laugh: "😄", wow: "😮", sad: "😢", point: "👉" };
+// [forward, right] relative to where the camera looks
 const KEY_DIRS: Record<string, [number, number]> = {
-  w: [-1, -1], arrowup: [-1, -1],
-  s: [1, 1], arrowdown: [1, 1],
-  a: [-1, 1], arrowleft: [-1, 1],
-  d: [1, -1], arrowright: [1, -1],
+  w: [1, 0], arrowup: [1, 0],
+  s: [-1, 0], arrowdown: [-1, 0],
+  a: [0, -1], arrowleft: [0, -1],
+  d: [0, 1], arrowright: [0, 1],
 };
 
 const MECHANIC_HINT: Record<string, string> = {
@@ -67,7 +69,10 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     c.onAck = (ok, cmd) => {
       const snd = soundRef.current;
       if (!ok) snd.reject();
-      else if (cmd.k === "harvest") snd.harvest();
+      else if (cmd.k === "harvest") {
+        snd.harvest();
+        r.swing();
+      }
       else if (cmd.k === "build") snd.build();
     };
     const prevBoundary = c.onBoundary;
@@ -106,19 +111,25 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     const held = new Set<string>();
     let harvestTimer: ReturnType<typeof setInterval> | null = null;
     const sendMove = (): void => {
-      let dx = 0;
-      let dy = 0;
+      let f = 0;
+      let rt = 0;
       for (const k of held) {
         const d = KEY_DIRS[k];
         if (d) {
-          dx += d[0];
-          dy += d[1];
+          f += d[0];
+          rt += d[1];
         }
       }
-      const len = Math.hypot(dx, dy);
-      if (len > 0) {
-        dx /= len;
-        dy /= len;
+      let dx = 0;
+      let dy = 0;
+      const r = rendererRef.current;
+      if (r && (f || rt)) {
+        // quantised to 64 headings so mouse look doesn't flood the server
+        const [fx, fy] = r.forward();
+        let a = Math.atan2(fx * f - fy * rt, fy * f + fx * rt);
+        a = Math.round(a / (Math.PI / 32)) * (Math.PI / 32);
+        dx = Math.sin(a);
+        dy = Math.cos(a);
       }
       if (dx !== client.me.dx || dy !== client.me.dy) {
         client.me.dx = dx;
@@ -187,10 +198,20 @@ export default function Game({ room, name }: { room: string; name: string }): Re
       if (harvestTimer) clearInterval(harvestTimer);
       harvestTimer = null;
     };
+    const look = (e: MouseEvent): void => {
+      const r = rendererRef.current;
+      if (!r || document.pointerLockElement !== canvasRef.current) return;
+      r.yaw -= e.movementX * 0.0025;
+      r.pitch = Math.max(-1.5, Math.min(1.5, r.pitch - e.movementY * 0.0025));
+    };
+    const steer = setInterval(() => held.size && sendMove(), 100);
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
+    document.addEventListener("mousemove", look);
     return () => {
+      clearInterval(steer);
+      document.removeEventListener("mousemove", look);
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
@@ -285,21 +306,21 @@ export default function Game({ room, name }: { room: string; name: string }): Re
     client?.toast("Photo saved.");
   }
 
-  const onPointer = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    view.hover = rendererRef.current?.pick(e.clientX - rect.left, e.clientY - rect.top) ?? null;
-    view.keyboardTarget = false;
+  const onPointer = (): void => {
+    view.keyboardTarget = true;
   };
   const onClick = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     if (e.button !== 0) return;
-    onPointer(e);
-    // a tall building is picked by what you see of it, not only its footprint
-    if (view.tool === "harvest" || view.tool === "inspect" || view.tool === "demolish") {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const b = rendererRef.current?.pickBuilding(e.clientX - rect.left, e.clientY - rect.top);
-      if (b) return act(b.x, b.y);
+    // the first click captures the mouse for looking around; after that, clicks act on the crosshair
+    if (document.pointerLockElement !== e.currentTarget) {
+      e.currentTarget.requestPointerLock();
+      return;
     }
-    if (view.hover) act(view.hover[0], view.hover[1]);
+    rendererRef.current?.swing();
+    const b = rendererRef.current?.pickBuilding();
+    if (b && view.tool !== "build") return act(b.x, b.y);
+    const t = rendererRef.current?.pick();
+    if (t) act(t[0], t[1]);
   };
 
   const st = s ? STAGES[s.stage] : null;
@@ -319,8 +340,8 @@ export default function Game({ room, name }: { room: string; name: string }): Re
           e.preventDefault();
           setTool("harvest");
         }}
-        onWheel={(e) => zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1)}
       />
+      <div className="crosshair" aria-hidden="true">+</div>
       {!s || !client || !st ? (
         <div className="overlay center">
           <div className="card">
@@ -667,7 +688,7 @@ function Help({ onClose, st }: { onClose: () => void; st: (typeof STAGES)[number
       <div className="card help">
         <h2 id="help-h">How to play</h2>
         <ul>
-          <li><kbd>WASD</kbd> or arrows: walk. Wheel or <kbd>+</kbd>/<kbd>-</kbd>: zoom.</li>
+          <li>Click the world to look around with the mouse (<kbd>Esc</kbd> frees it). <kbd>WASD</kbd> or arrows: walk. Click: act on the block under the crosshair.</li>
           <li><kbd>E</kbd>/<kbd>Space</kbd> (hold): harvest whatever's in reach, or help raise a building site. Or click a deposit.</li>
           <li><kbd>1</kbd>–<kbd>6</kbd>: pick a building. A ghost shows where it goes and why it can't. Click, or <kbd>Enter</kbd> for the tile you face. <kbd>Esc</kbd> cancels.</li>
           <li><kbd>I</kbd> inspect · <kbd>X</kbd> take down (half back) · <kbd>N</kbd> name a place · <kbd>V</kbd> survey the remaining stock · <kbd>P</kbd> photo · <kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>6</kbd> emote.</li>

@@ -2,6 +2,7 @@
 // does. Same (seed, stage) always yields the same map, which is what makes
 // regenerating a stage after a crash at the transition boundary safe.
 import { BUILDINGS, FAMILIES, STAGES, type BuildingType, type Family } from "./content.ts";
+import { elevation, moisture } from "./noise.ts";
 import type { Building, Terrain, Tile } from "./protocol.ts";
 
 export function rng(seed: number): () => number {
@@ -58,32 +59,54 @@ export function generateStage(seed: number, stageIndex: number): Generated {
     return dist(x, y, spawn.x, spawn.y) > 3;
   };
 
-  // Grow `count` deposit tiles in a few blobs around random seeds.
+  // Place `count` deposit tiles where a seeded Perlin field peaks, so stock
+  // gathers in natural-looking groves, ridges and ponds. Water seeks the
+  // valleys and stone the high ground of the same elevation the browser draws;
+  // more clusters means a finer field. Counts stay exact.
   const blobs = (family: Family, count: number, clusters: number, ok: (x: number, y: number) => boolean, terrain?: Terrain): void => {
     const spec = stage.families[family];
-    let placed = 0;
-    let guard = 0;
-    const perCluster = Math.ceil(count / clusters);
-    while (placed < count && guard++ < 5000) {
-      let x = Math.floor(r() * w);
-      let y = Math.floor(r() * w);
-      if (!ok(x, y)) continue;
-      let inCluster = 0;
-      let walk = 0;
-      while (placed < count && inCluster < perCluster && walk++ < perCluster * 12) {
-        if (ok(x, y)) {
-          const tile = at(x, y)!;
-          tile.d = family;
-          tile.amt = tile.init = spec.perTile;
-          if (terrain !== undefined) tile.t = terrain;
-          placed++;
-          inCluster++;
-        }
-        x = Math.max(0, Math.min(w - 1, x + Math.floor(r() * 3) - 1));
-        y = Math.max(0, Math.min(w - 1, y + Math.floor(r() * 3) - 1));
+    const salt = family === "matter" ? 11 : family === "mineral" ? 23 : 37;
+    const scale = w / (1 + 1.4 * Math.sqrt(clusters));
+    const land = stageIndex < 2;
+    const score = (x: number, y: number): number => {
+      const own = moisture(seed + salt, stageIndex, x, y, scale);
+      if (!land) return own;
+      const h = elevation(seed, stageIndex, x, y);
+      if (family === "coolant") return 1 - h + own * 0.15;
+      if (family === "mineral") return h * 0.7 + own * 0.3;
+      return own - Math.max(0, 0.3 - h);
+    };
+    const candidates: [number, number][] = [];
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) if (ok(x, y)) candidates.push([y * w + x, score(x, y) + r() * 1e-6]);
+    candidates.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    if (candidates.length < count) throw new Error(`worldgen: placed ${candidates.length}/${count} ${family} on ${stage.id}`);
+    let chosen = candidates.slice(0, count).map(([i]) => i);
+    if (clusters === 1) {
+      // one body: flood outward from the best tile, always taking the best edge
+      const score1 = new Map(candidates);
+      const picked = new Set([candidates[0][0]]);
+      while (picked.size < count) {
+        let best = -1;
+        let bs = -Infinity;
+        for (const i of picked)
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const x = (i % w) + dx;
+            const y = Math.floor(i / w) + dy;
+            const j = y * w + x;
+            if (x < 0 || y < 0 || x >= w || y >= w || picked.has(j) || !score1.has(j)) continue;
+            if (score1.get(j)! > bs) [best, bs] = [j, score1.get(j)!];
+          }
+        if (best < 0) break;
+        picked.add(best);
       }
+      if (picked.size === count) chosen = [...picked];
     }
-    if (placed < count) throw new Error(`worldgen: placed ${placed}/${count} ${family} on ${stage.id}`);
+    for (const i of chosen) {
+      const tile = tiles[i];
+      tile.d = family;
+      tile.amt = tile.init = spec.perTile;
+      if (terrain !== undefined) tile.t = terrain;
+    }
   };
 
   switch (stage.id) {
